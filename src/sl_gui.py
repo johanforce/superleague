@@ -2763,7 +2763,7 @@ class SuperLeagueApp:
         premier = self.game.league_table("premier")
         self.dash_labels["season"].set(self.game.season_label())
         self.dash_subs["season"].set("Đã chốt mùa" if s["season_done"] else "Đang diễn ra")
-        self.dash_labels["matches"].set(f"{len(s['matches'])} / 246")
+        self.dash_labels["matches"].set(f"{len(s['matches'])} / 248")
         self.dash_subs["matches"].set("trận trong mùa này")
         self.dash_labels["history"].set(str(len(s["history"])))
         self.dash_subs["history"].set("mùa đã hoàn tất")
@@ -2796,8 +2796,11 @@ class SuperLeagueApp:
                         return ("relegate_playoff",)
                     if index == 7:
                         return ("relegate",)
-                elif active_tier == "fc2" and index < 2:
-                    return ("promote",)
+                elif active_tier == "fc2":
+                    if index == 0:
+                        return ("top",)
+                    if index in (1, 2, 3):
+                        return ("promote",)
                 return ()
             self._set_tree(
                 self.dash_league_trees[tier], table,
