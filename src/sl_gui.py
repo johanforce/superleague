@@ -559,7 +559,9 @@ class SuperLeagueApp:
                 legend.pack(side="bottom", fill="x", pady=(8, 0))
                 self._legend_item(legend, GOLD, "Hạng 1 lên thẳng")
                 self._legend_item(legend, TURF, "Play-off: hạng 2, 3, 4")
-                if tier == "fc1": self._legend_item(legend, RED, "Hạng 7–8 xuống FC2")
+                if tier == "fc1":
+                    self._legend_item(legend, "#d9a441", "Hạng 6–7 play-off trụ hạng")
+                    self._legend_item(legend, RED, "Hạng 8 xuống hạng trực tiếp")
 
         self.fixtures_frame = self._new_page("fixtures", "Lịch & kết quả",
                                              "AI tự mô phỏng toàn bộ lịch đấu; nhấp đúp trận đã đá để xem báo cáo.")
@@ -1115,8 +1117,9 @@ class SuperLeagueApp:
             tree.column(key, width=width, minwidth=45, anchor=anchor, stretch=True)
         # Mỗi dòng chỉ gắn một tag: màu nền sọc + màu theo ý nghĩa (top / promote / relegate / pending).
         meaning = {"top": (GOLD, GOLD_BG), "promote": ("#c4f0d6", TURF_BG),
-                   "relegate": ("#f4c7cb", RED_BG), "pending": (MUTED, None),
-                   "next_match": (GOLD, GOLD_BG),
+                   "relegate": ("#f4c7cb", RED_BG),
+                   "relegate_playoff": ("#f6d59a", "#4a3820"),
+                   "pending": (MUTED, None), "next_match": (GOLD, GOLD_BG),
                    "starting_xi": (TURF_LIGHT, TURF_BG)}
         for parity, zebra in enumerate((SURFACE_2, STRIPE)):
             tree.tag_configure(f"row_{parity}", background=zebra, foreground=TEXT)
@@ -2785,9 +2788,13 @@ class SuperLeagueApp:
                     if self.game.s.get("league_phase2", {}).get("initialized") and index >= 6:
                         return ("relegate",)
                 elif active_tier == "fc1":
-                    if index < 2:
+                    if index == 0:
+                        return ("top",)
+                    if index in (1, 2, 3):
                         return ("promote",)
-                    if index >= 6:
+                    if index in (5, 6):
+                        return ("relegate_playoff",)
+                    if index == 7:
                         return ("relegate",)
                 elif active_tier == "fc2" and index < 2:
                     return ("promote",)
@@ -2838,7 +2845,8 @@ class SuperLeagueApp:
             def league_row_tags(index, row, active_tier=tier):
                 if index == 0: return ("top",)
                 if index in (1, 2, 3): return ("promote",)
-                if active_tier == "fc1" and index >= 6: return ("relegate",)
+                if active_tier == "fc1" and index in (5, 6): return ("relegate_playoff",)
+                if active_tier == "fc1" and index == 7: return ("relegate",)
                 return ()
             self._set_tree(self.league_trees[tier], table,
                            lambda i, row, active_tier=tier: standings_values(i, row, active_tier),
@@ -2864,6 +2872,24 @@ class SuperLeagueApp:
                     f"BÁN KẾT · HẠNG 3 VS HẠNG 4\n{semi_text}\n\n"
                     f"CHUNG KẾT · HẠNG 2 VS ĐỘI THẮNG BÁN KẾT\n{final_text}{winner_text}\n\n"
                     "Thể thức: một trận loại trực tiếp; nếu hòa sau 90 phút sẽ đá hiệp phụ và luân lưu.")
+            if tier == "fc1":
+                relegation = self.game.relegation_playoff_summary()
+                relegation_teams = relegation.get("teams", {})
+                leg1, leg2 = relegation.get("matches", {}).get("leg1"), relegation.get("matches", {}).get("leg2")
+                def leg_text(match, home, away):
+                    return (f"{match.get('home')} {match.get('hg')}–{match.get('ag')} {match.get('away')} · {match.get('date')}"
+                            if match else f"{home or '—'} vs {away or '—'} · Chưa đá")
+                aggregate = relegation.get("aggregate") or {}
+                aggregate_text = (f"Tổng tỷ số: {relegation_teams.get('sixth')} {aggregate.get('sixth', 0)}–"
+                                  f"{aggregate.get('seventh', 0)} {relegation_teams.get('seventh')}"
+                                  if aggregate else "Tổng tỷ số: chờ hoàn tất hai lượt")
+                text += ("\n\nFC1 · PLAY-OFF TRỤ HẠNG (HẠNG 6 VS HẠNG 7)\n\n"
+                         f"Lượt đi · Hạng 7 sân nhà\n{leg_text(leg1, relegation_teams.get('seventh'), relegation_teams.get('sixth'))}\n\n"
+                         f"Lượt về · Hạng 6 sân nhà\n{leg_text(leg2, relegation_teams.get('sixth'), relegation_teams.get('seventh'))}\n\n"
+                         f"{aggregate_text}\n"
+                         f"Ở lại FC1: {relegation.get('winner') or 'Chưa xác định'}\n"
+                         f"Xuống FC2: {relegation.get('loser') or 'Chưa xác định'}\n"
+                         "Hạng 8 xuống FC2 trực tiếp.")
             self._set_text(self.playoff_texts[tier], text)
         self.refresh_fixtures()
         self._refresh_overview_week_panel()
