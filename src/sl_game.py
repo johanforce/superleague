@@ -6160,8 +6160,16 @@ class Game:
         # Completed seasons created by this version use full season_stats snapshots.
         # Old records without the snapshot remain readable through match-level fallback.
         for season_record in self.s.get("history", []):
+            club_snapshot = season_record.get("club_player_stats")
             snapshot = season_record.get("career_player_stats")
-            if isinstance(snapshot, list):
+            if isinstance(club_snapshot, list):
+                # New archives retain one row per player and the club represented in that season.
+                for row in club_snapshot:
+                    add_totals(row.get("player_id"), row.get("player"), row.get("team"),
+                               row.get("position"), row.get("apps", 0), row.get("goals", 0),
+                               row.get("assists", 0), row.get("minutes", 0))
+            elif isinstance(snapshot, list):
+                # Legacy archives stored only the player's end-of-season club.
                 for row in snapshot:
                     add_totals(row.get("player_id"), row.get("player"), row.get("team"),
                                row.get("position"), row.get("apps", 0), row.get("goals", 0),
@@ -6177,7 +6185,21 @@ class Game:
         has_current_totals = isinstance(current_stats, dict) and any(
             any(int(stat.get(key, 0) or 0) for key in ("apps", "goals", "assists"))
             for stat in current_stats.values() if isinstance(stat, dict))
-        if not self.s.get("season_done") and has_current_totals:
+        current_club_stats = self.s.get("club_season_player_stats", {}) or {}
+        has_current_club_stats = any(
+            isinstance(player_rows, dict) and bool(player_rows)
+            for player_rows in current_club_stats.values()
+        )
+        if not self.s.get("season_done") and has_current_club_stats:
+            for club, player_rows in current_club_stats.items():
+                for row in (player_rows or {}).values():
+                    if not isinstance(row, dict):
+                        continue
+                    add_totals(row.get("player_id"), row.get("player"), club,
+                               row.get("position"), row.get("apps", 0), row.get("goals", 0),
+                               row.get("assists", 0), row.get("minutes", 0))
+        elif not self.s.get("season_done") and has_current_totals:
+            # Legacy active saves without club-season rows can only use the surviving club field.
             team_by_player = {str(pid): club for club, ids in self.s.get("rosters", {}).items() for pid in ids}
             for pid, stat in current_stats.items():
                 club = team_by_player.get(str(pid)) or (players.get(pid, {}) or {}).get("club", "")
@@ -6340,18 +6362,38 @@ class Game:
                 biggest_loss = detail
 
         legends = self.career_player_legends(team=team, limit=100000)
-        top_scorer = (legends.get("goals") or [None])[0]
-        top_assister = (legends.get("assists") or [None])[0]
-        first_match = all_matches[0] if all_matches else None
+        appearances = legends.get("appearances") or []
+        current_ids = {str(pid) for pid in (self.s.get("rosters", {}).get(team, []) or [])}
+        current_players = {str(row.get("player_id")): dict(row) for row in appearances
+                           if str(row.get("player_id")) in current_ids}
+        for pid in current_ids:
+            if pid in current_players:
+                continue
+            player = (self.s.get("players", {}) or {}).get(pid, {}) or {}
+            current_players[pid] = {
+                "player_id": pid, "player": player.get("common_name") or pid,
+                "team": team, "position": player.get("position") or "",
+                "apps": 0, "goals": 0, "assists": 0, "minutes": 0,
+            }
+        current_rows = sorted(current_players.values(),
+                              key=lambda row: (-int(row.get("apps", 0) or 0),
+                                               -int(row.get("goals", 0) or 0),
+                                               -int(row.get("assists", 0) or 0),
+                                               str(row.get("player", "")).casefold()))
+        former_rows = [dict(row) for row in appearances
+                       if str(row.get("player_id")) not in current_ids
+                       and any(int(row.get(key, 0) or 0) > 0 for key in ("apps", "goals", "assists"))]
         stats = {
             "matches": len(all_matches), "wins": wins, "draws": draws, "losses": losses,
-            "top_scorer": top_scorer, "top_assister": top_assister,
+            "top_scorer": (legends.get("goals") or [None])[0],
+            "top_assister": (legends.get("assists") or [None])[0],
             "biggest_win": biggest_win, "biggest_loss": biggest_loss,
-            "first_match": first_match,
+            "first_match": all_matches[0] if all_matches else None,
         }
         return {"seasons": sorted(seasons, reverse=True), "by_season": season_rows,
                 "by_competition": competition_rows, "matches": all_matches,
-                "stats": stats, "top11": (legends.get("appearances") or [])[:11]}
+                "stats": stats, "top11": appearances[:11],
+                "current_players": current_rows, "former_players": former_rows}
 
     @staticmethod
     def _player_search_fold(value):
