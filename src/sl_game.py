@@ -1427,14 +1427,15 @@ class Game:
         result_ids = slot.get("fixture_result_ids", {})
         specs = []
 
-        def add(key, comp, round_label, home, away, *, force_winner=False, stage, **meta):
+        def add(key, comp, round_label, home, away, *, force_winner=False,
+                aggregate_before=None, stage, **meta):
             if not include_played and key in result_ids:
                 return
             specs.append({
                 "spec_key": key, "slot_id": slot["id"], "season": int(self.s["season"]),
                 "date": slot["date"], "comp": comp, "round": round_label,
                 "home": home, "away": away, "neutral": False,
-                "force_winner": bool(force_winner), "aggregate_before": None,
+                "force_winner": bool(force_winner), "aggregate_before": aggregate_before,
                 "stage": stage, "_meta": meta,
             })
 
