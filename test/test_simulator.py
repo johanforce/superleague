@@ -792,6 +792,30 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(game.s["calendar_validation"]["midweek_day"], "wed")
             self.assertTrue(all(d >= date.fromisoformat(cfg["calendar"]["start_date"]) for d in dates))
 
+    def test_v4_calendar_migration_adds_fc1_relegation_legs_and_interleaves_c1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=99881)
+            anchor = date.fromisoformat(game.s["season_start_date"])
+            game.s["slots"] = [slot for slot in game.s["slots"]
+                               if slot["id"] not in ("P2FC1R04", "P2FC1R06")]
+            old_c1_offsets = [1, 3, 6, 36, 37, 38, 39, 40, 41]
+            for index, week in enumerate(old_c1_offsets, 1):
+                slot = next(item for item in game.s["slots"] if item["id"] == f"C1{index}")
+                slot["date"] = (anchor + timedelta(weeks=week, days=-3)).isoformat()
+            game.s["calendar_schedule_version"] = 4
+            game.save()
+
+            migrated = Game(data_dir=tmp, seed=99881)
+            slots = {slot["id"]: slot for slot in migrated.s["slots"]}
+            self.assertEqual(migrated.s["calendar_schedule_version"], 5)
+            self.assertEqual(len(migrated.s["slots"]), 68)
+            self.assertEqual(slots["P2FC1R04"]["label"], "FC1 · Play-off trụ hạng · Lượt đi")
+            self.assertEqual(slots["P2FC1R06"]["label"], "FC1 · Play-off trụ hạng · Lượt về")
+            self.assertEqual(date.fromisoformat(slots["C14"]["date"]),
+                             anchor + timedelta(weeks=11, days=-3))
+            self.assertEqual(slots["C19"]["date"], max(slot["date"] for slot in migrated.s["slots"]))
+            self.assertTrue(migrated.s["calendar_validation"]["valid"])
+
     def test_schedule_v2_save_retimes_unplayed_fixtures_to_current_weekday_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
             game = Game(data_dir=tmp, fresh=True, seed=778812)
