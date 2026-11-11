@@ -455,7 +455,7 @@ class Game:
                 "fc2": {"positions": [46, 24, 20, 16, 12, 8, 4, 2], "promotion_playoff_winner": 34},
                 "cup": {"winner": 40, "final": 30, "sf": 22, "qf": 14, "r16": 8, "r1": 3},
                 "history_weight": 0.0},
-            "calendar": {"start_date": "2026-08-01", "league_day": "sat", "fc2_day": "fri", "fc1_day": "sun", "cup_day": "tue", "midweek_day": "wed", "min_rest_days": 3, "league_week_offsets": [0,1,2,3,5,6,7,8,10,11,12,13,15,17], "fc2_week_offsets": [0,2,4,5,7,8,9,10,12,13,14,15,17,19], "cup_week_offsets": [5,10,15,17,33], "c1_week_offsets": [1,3,6,36,37,38,39,40,41], "league_phase2_week_offsets": [30,31,32,33,34,35], "cup_final_after_premier_round": 3},
+            "calendar": {"start_date": "2026-08-01", "league_day": "sat", "fc2_day": "fri", "fc1_day": "sun", "cup_day": "tue", "midweek_day": "wed", "min_rest_days": 3, "league_week_offsets": [0,1,2,3,5,6,7,8,10,11,12,13,15,17], "fc2_week_offsets": [0,2,4,5,7,8,9,10,12,13,14,15,17,19], "cup_week_offsets": [5,10,15,17,33], "c1_week_offsets": [1,3,6,11,16,20,37,39,41], "league_phase2_week_offsets": [30,31,32,33,34,35], "cup_final_after_premier_round": 3},
             "engine": {"base_xg":1.22,"gap_scale":28.0,"gap_cap":.72,"home_factor":1.055,"away_factor":.945,
                        "xg_min":.25,"xg_max":2.65,"et_xg_factor":.23,"shots_per_xg":8.2,"sot_ratio_min":.30,
                        "sot_ratio_max":.43,"possession_gap_weight":1.35,"possession_noise":2.6,"assist_probability":.76,
@@ -891,6 +891,8 @@ class Game:
                         "phase1_table": []},
             "promotion_playoffs": {tier: {"teams": {}, "semi_match": None, "final_match": None, "winner": None}
                                    for tier in ("fc1", "fc2")},
+            "relegation_playoff": {"teams": {}, "leg1_match": None, "leg2_match": None,
+                                   "winner": None, "loser": None},
         }
 
     def _shift_pending_calendar_after_played_matches(self):
@@ -1318,6 +1320,7 @@ class Game:
     def _initialize_league_phase2_if_ready(self):
         phase2 = self.s.setdefault("league_phase2", self._empty_league_phase2())
         if phase2.get("initialized"):
+            self._fc1_relegation_playoff_entry()
             return True
         regular_matches = {tier: [m for m in self.s.get("matches", [])
                                   if m.get("played") and m.get("comp") == TIER_LABELS[tier]
@@ -1353,7 +1356,23 @@ class Game:
             }
         phase2["initialized"] = True
         phase2["initialized_season"] = int(self.s["season"])
+        self._fc1_relegation_playoff_entry(tables.get("fc1"))
         return True
+
+    def _fc1_relegation_playoff_entry(self, phase1_table=None):
+        """Return the FC1 6th-v-7th relegation tie, creating its participants once known."""
+        phase2 = self.s.setdefault("league_phase2", self._empty_league_phase2())
+        entry = phase2.setdefault("relegation_playoff", {
+            "teams": {}, "leg1_match": None, "leg2_match": None, "winner": None, "loser": None,
+        })
+        entry.setdefault("teams", {})
+        for key in ("leg1_match", "leg2_match", "winner", "loser"):
+            entry.setdefault(key, None)
+        if not entry.get("teams"):
+            rows = phase1_table if phase1_table is not None else self.league_phase1_table("fc1")
+            if len(rows) >= 8:
+                entry["teams"] = {"sixth": rows[5]["team"], "seventh": rows[6]["team"]}
+        return entry
 
     def _phase2_fixture_specs(self, slot, include_played=False):
         """Build phase-two Premier and promotion-playoff fixtures for a phase-two slot."""
@@ -1457,6 +1476,28 @@ class Game:
             matches[key] = self.match_by_id(mid) if mid else None
         return {"teams": teams, "matches": matches, "winner": entry.get("winner"),
                 "ready": bool(phase2.get("initialized"))}
+
+    def relegation_playoff_summary(self):
+        """Return FC1 two-leg survival tie and its aggregate score."""
+        entry = self._fc1_relegation_playoff_entry()
+        matches = {}
+        for key, field in (("leg1", "leg1_match"), ("leg2", "leg2_match")):
+            mid = entry.get(field)
+            matches[key] = self.match_by_id(mid) if mid else None
+        teams = dict(entry.get("teams") or {})
+        aggregate = None
+        if matches["leg1"] and matches["leg2"]:
+            first, second = matches["leg1"], matches["leg2"]
+            aggregate = {
+                "sixth": int(first.get("ag", 0) or 0) + int(second.get("hg", 0) or 0),
+                "seventh": int(first.get("hg", 0) or 0) + int(second.get("ag", 0) or 0),
+            }
+        winner = entry.get("winner") or (matches["leg2"].get("winner") if matches["leg2"] else None)
+        loser = entry.get("loser")
+        if winner and not loser:
+            loser = teams.get("seventh") if winner == teams.get("sixth") else teams.get("sixth")
+        return {"teams": teams, "matches": matches, "aggregate": aggregate,
+                "winner": winner, "loser": loser, "ready": bool(teams)}
 
     def league_phase1_table(self, tier):
         if tier not in TIERS: tier = TIER_KEY_BY_LABEL.get(tier, "premier")
@@ -2097,8 +2138,15 @@ class Game:
                                   "kind": "league_phase2", "phase2_tier": tier, "round": i,
                                   "label": f"{tier_labels[tier]} · Play-off thăng hạng · Vòng {i}",
                                   "played": False, "fixture_result_ids": {}, "match_ids": []})
+        for round_no, week_index, leg_label in ((4, 3, "Lượt đi"), (6, 5, "Lượt về")):
+            week = phase2_offsets[week_index]
+            slots.append({"id": f"P2FC1R{round_no:02d}",
+                          "date": _date_in_week(league_anchor, week, fc1_weekday).isoformat(),
+                          "kind": "league_phase2", "phase2_tier": "fc1", "round": round_no,
+                          "label": f"FC1 · Play-off trụ hạng · {leg_label}", "played": False,
+                          "fixture_result_ids": {}, "match_ids": []})
         s["slots"] = sorted(slots, key=lambda x: (x["date"], x["id"]))
-        s["calendar_schedule_version"] = 4
+        s["calendar_schedule_version"] = 5
         # C1 Final is intentionally the final dated slot of the season.
         if max(s["slots"], key=lambda item: item["date"]).get("kind") != "c1_final":
             raise ValueError("C1 Final phải là trận cuối cùng trong lịch mùa giải.")
@@ -2114,6 +2162,8 @@ class Game:
                         "phase1_table": []},
             "promotion_playoffs": {tier: {"teams": {}, "semi_match": None, "final_match": None, "winner": None}
                                    for tier in ("fc1", "fc2")},
+            "relegation_playoff": {"teams": {}, "leg1_match": None, "leg2_match": None,
+                                   "winner": None, "loser": None},
         }
         for tier in TIERS:
             teams = sorted([t for t, tr in s["season_tiers"].items() if tr == tier], key=lambda t: seeds.index(t))
@@ -2577,6 +2627,17 @@ class Game:
             elif meta["stage_key"] == "final":
                 entry["final_match"] = int(match["id"])
                 entry["winner"] = match["winner"]
+
+        elif bucket == "fc1_relegation":
+            entry = self._fc1_relegation_playoff_entry()
+            if meta["leg_key"] == "leg1":
+                entry["leg1_match"] = int(match["id"])
+            elif meta["leg_key"] == "leg2":
+                entry["leg2_match"] = int(match["id"])
+                entry["winner"] = match.get("winner")
+                teams = entry.get("teams", {})
+                entry["loser"] = (teams.get("seventh") if entry["winner"] == teams.get("sixth")
+                                  else teams.get("sixth")) if entry["winner"] else None
 
         elif bucket == "cup":
             cup = self.s["cup"]
