@@ -507,6 +507,63 @@ class SimulatorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cao hơn hạng 8 premier"):
                 Game._validate_config(invalid)
 
+    def test_club_player_history_keeps_former_players_and_contributions_after_transfer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=20261111)
+            team, other_team = list(game.s["rosters"])[:2]
+            scorer_id, assist_id = game.s["rosters"][team][:2]
+            scorer_name = game.s["players"][scorer_id]["common_name"]
+            assist_name = game.s["players"][assist_id]["common_name"]
+            match = {
+                "id": 99991, "season": game.s["season"], "date": f"{game.s['season']}-08-20",
+                "comp": "Premier League", "home": team, "away": other_team, "hg": 2, "ag": 0,
+                "xi_h": [scorer_id, assist_id], "xi_a": [], "subs_h": [], "subs_a": [],
+                "minutes_h": {scorer_id: 90, assist_id: 90}, "minutes_a": {},
+                "player_stats": {
+                    "h": {scorer_id: {"min": 90, "g": 2, "a": 0},
+                          assist_id: {"min": 90, "g": 0, "a": 1}},
+                    "a": {},
+                },
+                "goals": [
+                    {"side": "home", "team": team, "scorer_id": scorer_id, "scorer": scorer_name,
+                     "assist_id": assist_id, "assist": assist_name},
+                    {"side": "home", "team": team, "scorer_id": scorer_id, "scorer": scorer_name},
+                ],
+            }
+            game._update_club_season_player_stats(match)
+
+            # Both players leave the club before the season is finalized.
+            game.s["rosters"][team].remove(scorer_id)
+            game.s["rosters"][team].remove(assist_id)
+            game.s["rosters"][other_team].extend([scorer_id, assist_id])
+            game.s["players"][scorer_id]["club"] = other_team
+            game.s["players"][assist_id]["club"] = other_team
+
+            legends = game.career_player_legends(team=team, limit=1000)
+            scorer = next(row for row in legends["goals"] if row["player_id"] == scorer_id)
+            assister = next(row for row in legends["assists"] if row["player_id"] == assist_id)
+            self.assertEqual((scorer["apps"], scorer["goals"]), (1, 2))
+            self.assertEqual((assister["apps"], assister["assists"]), (1, 1))
+            self.assertEqual(scorer["team"], team)
+            self.assertEqual(assister["team"], team)
+
+            club_data = game.club_history_analytics(team)
+            former_ids = {row["player_id"] for row in club_data["former_players"]}
+            current_ids = {row["player_id"] for row in club_data["current_players"]}
+            self.assertTrue({scorer_id, assist_id}.issubset(former_ids))
+            self.assertTrue({scorer_id, assist_id}.isdisjoint(current_ids))
+
+            # Completed-season club snapshots must remain readable after active stats reset.
+            archived_rows = [dict(row) for row in game.s["club_season_player_stats"][team].values()]
+            game.s["history"].append({
+                "season": int(game.s["season"]) - 1,
+                "club_player_stats": archived_rows,
+            })
+            game.s["club_season_player_stats"] = {}
+            archived_legends = game.career_player_legends(team=team, limit=1000)
+            archived_scorer = next(row for row in archived_legends["goals"] if row["player_id"] == scorer_id)
+            self.assertEqual((archived_scorer["apps"], archived_scorer["goals"]), (1, 2))
+
     def test_full_season_and_roster_invariants(self):
         with tempfile.TemporaryDirectory() as tmp:
             game = Game(data_dir=tmp, fresh=True)
@@ -588,7 +645,10 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(len(game.s["history"]), 1)
             self.assertIn("career_player_stats", record)
             self.assertTrue(record["career_player_stats"])
+            self.assertIn("club_player_stats", record)
+            self.assertTrue(record["club_player_stats"])
             self.assertTrue({"player_id", "player", "team", "apps", "goals", "assists", "minutes"}.issubset(record["career_player_stats"][0]))
+            self.assertTrue({"player_id", "player", "team", "apps", "goals", "assists", "minutes"}.issubset(record["club_player_stats"][0]))
             annual = record["season_awards"]
             self.assertEqual(annual.get("best_xi_version"), 8)
             top20 = annual.get("top20_players", [])
