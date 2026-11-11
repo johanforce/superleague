@@ -601,6 +601,58 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual((retained["apps"], retained["goals"], retained["assists"]),
                              (5, 3, 1))
 
+    def test_fc1_relegation_return_leg_uses_aggregate_for_extra_time_and_penalties(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=20261113)
+            sixth, seventh = list(game.s["rosters"])[:2]
+            first_leg = {
+                "id": 1, "season": int(game.s["season"]), "played": True,
+                "date": "2027-05-01", "comp": "Football Championship 1",
+                "home": seventh, "away": sixth, "hg": 2, "ag": 1,
+                "winner": seventh, "goals": [],
+            }
+            game.s["matches"] = [first_leg]
+            game.s["next_match_id"] = 2
+            phase2 = game.s["league_phase2"]
+            phase2["initialized"] = True
+            phase2["relegation_playoff"] = {
+                "teams": {"sixth": sixth, "seventh": seventh},
+                "leg1_match": 1, "leg2_match": None, "winner": None, "loser": None,
+            }
+            return_slot = next(slot for slot in game.s["slots"] if slot["id"] == "P2FC1R06")
+            for slot in game.s["slots"]:
+                slot["played"] = slot is not return_slot
+            return_slot["fixture_result_ids"] = {}
+            return_slot["match_ids"] = []
+            game.config["match_engine"] = "legacy"
+
+            specs = game.slot_fixture_specs(return_slot, allow_future=True)
+            self.assertEqual(len(specs), 1)
+            self.assertTrue(specs[0]["force_winner"])
+            self.assertEqual(specs[0]["aggregate_before"], (1, 2))
+
+            # Regulation ends 1-0 for the home side: aggregate becomes 2-2.
+            # Extra time is 0-0, so the mocked shoot-out decides the tie.
+            poisson_values = iter((1, 0, 0, 0, 2, 1))
+            def deterministic_poisson(_lam, _rng):
+                return next(poisson_values, 1)
+
+            with patch.object(sl_game_module.eng, "poisson", side_effect=deterministic_poisson), \\
+                 patch.object(sl_game_module.eng, "_shootout", return_value={"home": 5, "away": 4}), \\
+                 patch.object(game, "_complete_slot", return_value={"finished": False}):
+                game.advance_slot(persist=False)
+
+            return_match = game.s["matches"][-1]
+            self.assertEqual((return_match["hg"], return_match["ag"]), (1, 0))
+            self.assertTrue(return_match["et"])
+            self.assertEqual(return_match["pens"], {"home": 5, "away": 4})
+            self.assertEqual(return_match["winner"], sixth)
+            tie = game.relegation_playoff_summary()
+            self.assertEqual(tie["winner"], sixth)
+            self.assertEqual(tie["loser"], seventh)
+
     def test_full_season_and_roster_invariants(self):
         with tempfile.TemporaryDirectory() as tmp:
             game = Game(data_dir=tmp, fresh=True)
