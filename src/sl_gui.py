@@ -5074,8 +5074,17 @@ class SuperLeagueApp:
         def match_text(match):
             if not match:
                 return "Chưa có"
-            return (f"{match.get('home')} {match.get('hg')}–{match.get('ag')} "
-                    f"{match.get('away')} · {match.get('date')} · {match.get('comp')}")
+            home = match.get("home") or "—"
+            away = match.get("away") or "—"
+            home_goals, away_goals = match.get("hg"), match.get("ag")
+            if home_goals is not None and away_goals is not None:
+                score = f"{home_goals}–{away_goals}"
+            else:
+                score = match.get("score") or "—"
+            match_date = match.get("date") or "—"
+            competition = (match.get("comp") or match.get("competition") or
+                           match.get("competition_name") or "Không rõ giải")
+            return f"{home} {score} {away} · {match_date} · {competition}"
         scorer = stats.get("top_scorer") or {}
         assister = stats.get("top_assister") or {}
         values = {
