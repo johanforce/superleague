@@ -2458,6 +2458,8 @@ class SuperLeagueApp:
         season = int(selected) if selected.isdigit() else None
         rows = [row for row in data.get("matches", [])
                 if season is None or int(row.get("season", season) or season) == season]
+        rows.sort(key=lambda row: (int(row.get("season", 0) or 0), str(row.get("date", "")),
+                                   int(row.get("id", 0) or 0)), reverse=True)
         self.club_history_match_lookup = {f"{row.get('season')}_{row.get('id')}": row for row in rows}
         self._set_tree(tree, rows, lambda _i, row: (
             row.get("date", "—"), row.get("comp", "—"), row.get("round", "—"),
