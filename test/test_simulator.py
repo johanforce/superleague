@@ -555,7 +555,25 @@ class SimulatorTests(unittest.TestCase):
                 self.assertEqual(playoff["semi_match"] is not None, True)
                 self.assertEqual(playoff["final_match"] is not None, True)
                 self.assertIn(playoff["winner"], (playoff["teams"]["second"], game.match_by_id(playoff["semi_match"])["winner"]))
+            relegation = phase2["relegation_playoff"]
+            leg1 = game.match_by_id(relegation["leg1_match"])
+            leg2 = game.match_by_id(relegation["leg2_match"])
+            self.assertEqual((leg1["home"], leg1["away"]),
+                             (relegation["teams"]["seventh"], relegation["teams"]["sixth"]))
+            self.assertEqual((leg2["home"], leg2["away"]),
+                             (relegation["teams"]["sixth"], relegation["teams"]["seventh"]))
+            self.assertIn(relegation["winner"], (relegation["teams"]["sixth"], relegation["teams"]["seventh"]))
+            self.assertIn(relegation["loser"], (relegation["teams"]["sixth"], relegation["teams"]["seventh"]))
+            self.assertNotEqual(relegation["winner"], relegation["loser"])
+            fc1_table = game.league_phase1_table("fc1")
+            relegated_fc1 = {row["team"] for row in record["relegated"] if row["from"] == "fc1"}
+            self.assertEqual(relegated_fc1, {fc1_table[-1]["team"], relegation["loser"]})
             self.assertEqual(Counter(game.s["team_tiers"].values()), Counter({"premier":8,"fc1":8,"fc2":8}))
+            club_data = game.club_history_analytics(relegation["teams"]["sixth"])
+            self.assertEqual(club_data["stats"]["matches"],
+                             club_data["stats"]["wins"] + club_data["stats"]["draws"] + club_data["stats"]["losses"])
+            self.assertTrue(club_data["stats"]["first_match"])
+            self.assertLessEqual(len(club_data["top11"]), 11)
             self.assertEqual(len(record["qualification_table"]), 24)
             self.assertEqual(len(game.s["history"]), 1)
             self.assertIn("career_player_stats", record)
@@ -759,6 +777,11 @@ class SimulatorTests(unittest.TestCase):
                     self.assertEqual(weekday, 2, slot)  # Wednesday
             self.assertTrue(game.s["calendar_validation"]["valid"])
             self.assertEqual(game.s["calendar_schedule_version"], 5)
+            self.assertEqual([date.fromisoformat(slots[f"C1{i}"]["date"]) for i in range(1, 10)],
+                             [anchor + timedelta(weeks=week, days=-3)
+                              for week in (1, 3, 6, 11, 16, 20, 37, 39, 41)])
+            self.assertEqual(slots["P2FC1R04"]["kind"], "league_phase2")
+            self.assertEqual(slots["P2FC1R06"]["kind"], "league_phase2")
             self.assertEqual(game.s["calendar_validation"]["fc2_weekday"], "fri")
             self.assertEqual(game.s["calendar_validation"]["league_weekday"], "sat")
             self.assertEqual(game.s["calendar_validation"]["fc1_weekday"], "sun")
