@@ -6089,8 +6089,8 @@ class Game:
                     return "—"
                 return f"Tạm thời · Hạng {pos}" if season == current_season and not self.s.get("season_done") else f"Hạng {pos}"
             if key == "cup":
-                if season == current_season and not self.s.get("season_done") and comp_matches:
-                    return "Đang diễn ra"
+                if season == current_season and not self.s.get("season_done"):
+                    return "Đang diễn ra" if comp_matches else "Chưa thi đấu"
                 if record.get("champion_cup") == team:
                     return "Vô địch"
                 if record.get("runner_up_cup") == team:
@@ -6099,11 +6099,15 @@ class Game:
                 order = ("cup_final", "cup_sf", "cup_qf", "cup_r16", "cup_r1")
                 furthest = next((stage for stage in order if stage in stages), None)
                 return f"Dừng ở {stage_labels[furthest]}" if furthest else "Không tham dự"
-            if season == current_season and not self.s.get("season_done") and comp_matches:
-                return "Đang diễn ra"
-            if record.get("champion_c1") == team or record.get("c1", {}).get("champion") == team:
+            if season == current_season and not self.s.get("season_done"):
+                if comp_matches:
+                    return "Đang diễn ra"
+                c1_state = self.s.get("c1", {}) or {}
+                eligible = set(c1_state.get("direct_teams", []) or []) | set(c1_state.get("playin_seed_teams", []) or [])
+                return "Chưa thi đấu" if team in eligible else "Không tham dự"
+            if record.get("champion_c1") == team or (record.get("c1") or {}).get("champion") == team:
                 return "Vô địch"
-            if record.get("runner_up_c1") == team or record.get("c1", {}).get("runner_up") == team:
+            if record.get("runner_up_c1") == team or (record.get("c1") or {}).get("runner_up") == team:
                 return "Á quân"
             stages = [str(m.get("stage", "")) for m in comp_matches]
             if any(stage.startswith("c1_semi") for stage in stages):
