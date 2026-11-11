@@ -6117,6 +6117,9 @@ class Game:
                 if finish not in ("—", "Không tham dự"):
                     competition_rows.append({"competition": label, "season": season, "finish": finish})
             season_rows.append(row)
+        competition_order = {label: index for index, (_key, label) in enumerate(competition_names)}
+        competition_rows.sort(key=lambda row: (competition_order.get(row["competition"], 99),
+                                                -int(row.get("season", 0))))
 
         wins = draws = losses = 0
         biggest_win = biggest_loss = None
