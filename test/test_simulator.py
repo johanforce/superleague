@@ -583,7 +583,7 @@ class SimulatorTests(unittest.TestCase):
                 "matches": [{
                     "id": 1, "season": int(game.s["season"]) - 1, "played": True,
                     "date": "2025-08-01", "comp": "Premier League",
-                    "home": original_club, "away": current_club, "hg": 1, "ag": 0,
+                    "home": original_club, "away": current_club, "hg": 1, "ag": 3,
                     "goals": [
                         {"team": original_club, "scorer_id": player_id, "scorer": player_name},
                         {"team": current_club, "scorer_id": player_id, "scorer": player_name},
