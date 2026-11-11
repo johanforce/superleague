@@ -2460,7 +2460,9 @@ class SuperLeagueApp:
         self.club_history_match_lookup = {f"{row.get('season')}_{row.get('id')}": row for row in rows}
         self._set_tree(tree, rows, lambda _i, row: (
             row.get("date", "—"), row.get("comp", "—"), row.get("round", "—"),
-            row.get("home", "—"), f"{row.get('hg', '—')}–{row.get('ag', '—')}",
+            row.get("home", "—"),
+            f"{row.get('hg', '—')}–{row.get('ag', '—')}" +
+            (f" (pen {row['pens'].get('home')}-{row['pens'].get('away')})" if isinstance(row.get("pens"), dict) else ""),
             row.get("away", "—"),
             ("Thắng" if ((row.get("home") == self._club_history_data.get("team") and int(row.get("hg", 0)) > int(row.get("ag", 0))) or
                          (row.get("away") == self._club_history_data.get("team") and int(row.get("ag", 0)) > int(row.get("hg", 0))))
