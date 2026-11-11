@@ -6170,10 +6170,42 @@ class Game:
                                row.get("assists", 0), row.get("minutes", 0))
             elif isinstance(snapshot, list):
                 # Legacy archives stored only the player's end-of-season club.
+                # Compact match logs still retain scorer IDs and clubs, so restore
+                # goal credit to the club that actually scored while leaving
+                # appearances/assists on the archived season snapshot.
+                legacy_goal_counts = Counter()
+                legacy_goal_names = {}
+                for match in season_record.get("matches", []) or []:
+                    if not match.get("played", True):
+                        continue
+                    for event in match.get("goals", []) or []:
+                        if not isinstance(event, dict):
+                            continue
+                        pid = event.get("scorer_id") or event.get("player_id")
+                        club = event.get("team")
+                        if not pid or not club:
+                            continue
+                        key = (str(pid), str(club))
+                        legacy_goal_counts[key] += 1
+                        legacy_goal_names.setdefault(key, event.get("scorer") or event.get("player"))
+                scorer_ids = {pid for pid, _club in legacy_goal_counts}
+                snapshot_by_id = {str(row.get("player_id")): row for row in snapshot
+                                  if isinstance(row, dict) and row.get("player_id")}
                 for row in snapshot:
+                    if not isinstance(row, dict):
+                        continue
+                    pid = str(row.get("player_id") or "")
+                    snapshot_goals = 0 if pid in scorer_ids else row.get("goals", 0)
                     add_totals(row.get("player_id"), row.get("player"), row.get("team"),
-                               row.get("position"), row.get("apps", 0), row.get("goals", 0),
+                               row.get("position"), row.get("apps", 0), snapshot_goals,
                                row.get("assists", 0), row.get("minutes", 0))
+                for (pid, club), count in legacy_goal_counts.items():
+                    row = snapshot_by_id.get(pid, {})
+                    player_row = players.get(pid, {}) or {}
+                    add_totals(pid, row.get("player") or legacy_goal_names.get((pid, club))
+                               or player_row.get("common_name") or pid,
+                               club, row.get("position") or player_row.get("position") or "",
+                               0, count, 0, 0)
             else:
                 for match in season_record.get("matches", []) or []:
                     if match.get("played", True):
