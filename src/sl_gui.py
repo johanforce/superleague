@@ -2457,7 +2457,7 @@ class SuperLeagueApp:
         season = int(selected) if selected.isdigit() else None
         rows = [row for row in data.get("matches", [])
                 if season is None or int(row.get("season", season) or season) == season]
-        self.club_history_match_lookup = {str(row.get("id")): row for row in rows}
+        self.club_history_match_lookup = {f"{row.get('season')}_{row.get('id')}": row for row in rows}
         self._set_tree(tree, rows, lambda _i, row: (
             row.get("date", "—"), row.get("comp", "—"), row.get("round", "—"),
             row.get("home", "—"), f"{row.get('hg', '—')}–{row.get('ag', '—')}",
@@ -2465,7 +2465,7 @@ class SuperLeagueApp:
             ("Thắng" if ((row.get("home") == self._club_history_data.get("team") and int(row.get("hg", 0)) > int(row.get("ag", 0))) or
                          (row.get("away") == self._club_history_data.get("team") and int(row.get("ag", 0)) > int(row.get("hg", 0))))
              else "Hòa" if int(row.get("hg", 0)) == int(row.get("ag", 0)) else "Thua")),
-            iid_of=lambda _i, row: str(row.get("id") or f"{row.get('season')}_{row.get('date')}_{row.get('home')}"))
+            iid_of=lambda _i, row: f"{row.get('season')}_{row.get('id') or row.get('date')}_{row.get('home')}")
         if not rows:
             tree.insert("", "end", values=("—", "—", "Chưa có trận", "", "", "", ""))
 
