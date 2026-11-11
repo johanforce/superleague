@@ -6062,11 +6062,11 @@ class Game:
                 "cup": 0, "c1": 0, "total": 0, "rank": None}
 
     def career_player_legends(self, team=None, limit=11):
-        """Career all-time leaders from season snapshots or saved match records.
+        """Career leaders by club, using club-specific season totals when available.
 
-        New season archives store full per-player season totals. Older archives fall
-        back to their saved XI/substitute lists and goal events. If an old match did
-        not store substitutes or minutes, those unavailable values are not guessed.
+        New archives retain player totals for each club separately. Older archives
+        fall back to their season snapshots or saved match records; unavailable
+        historical minutes/appearances are not guessed.
         """
         players = self.s.get("players", {})
         aggregate = {}
@@ -6191,13 +6191,28 @@ class Game:
             for player_rows in current_club_stats.values()
         )
         if not self.s.get("season_done") and has_current_club_stats:
+            tracked_player_ids = set()
             for club, player_rows in current_club_stats.items():
-                for row in (player_rows or {}).values():
+                for pid, row in (player_rows or {}).items():
                     if not isinstance(row, dict):
                         continue
+                    tracked_player_ids.add(str(pid))
                     add_totals(row.get("player_id"), row.get("player"), club,
                                row.get("position"), row.get("apps", 0), row.get("goals", 0),
                                row.get("assists", 0), row.get("minutes", 0))
+            # Retain remaining active-save statistics when a very old match log
+            # did not preserve enough lineup detail to backfill the club snapshot.
+            team_by_player = {str(pid): club for club, ids in self.s.get("rosters", {}).items() for pid in ids}
+            for pid, stat in current_stats.items():
+                if str(pid) in tracked_player_ids or not isinstance(stat, dict):
+                    continue
+                club = team_by_player.get(str(pid)) or (players.get(pid, {}) or {}).get("club", "")
+                if not club or not any(int(stat.get(key, 0) or 0) for key in ("apps", "goals", "assists")):
+                    continue
+                player_row = players.get(pid, {}) or {}
+                add_totals(pid, player_row.get("common_name", str(pid)), club,
+                           player_row.get("position", ""), stat.get("apps", 0), stat.get("goals", 0),
+                           stat.get("assists", 0), stat.get("mins", 0))
         elif not self.s.get("season_done") and has_current_totals:
             # Legacy active saves without club-season rows can only use the surviving club field.
             team_by_player = {str(pid): club for club, ids in self.s.get("rosters", {}).items() for pid in ids}
