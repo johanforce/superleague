@@ -3479,7 +3479,9 @@ class Game:
                 self._assert_match_rest(spec["home"], spec["away"], spec["date"])
                 match = self._record_match(spec["comp"], spec["round"], spec["home"], spec["away"],
                                            spec["date"], neutral=spec["neutral"],
-                                           force_winner=spec["force_winner"], stage=spec["stage"])
+                                           force_winner=spec["force_winner"],
+                                           aggregate_before=spec.get("aggregate_before"),
+                                           stage=spec["stage"])
                 self._register_slot_fixture(slot, spec, match)
         elif kind.startswith("cup_"):
             self._handle_cup(slot)
