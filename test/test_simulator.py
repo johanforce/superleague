@@ -584,7 +584,12 @@ class SimulatorTests(unittest.TestCase):
                     "id": 1, "season": int(game.s["season"]) - 1, "played": True,
                     "date": "2025-08-01", "comp": "Premier League",
                     "home": original_club, "away": current_club, "hg": 1, "ag": 0,
-                    "goals": [{"team": original_club, "scorer_id": player_id, "scorer": player_name}],
+                    "goals": [
+                        {"team": original_club, "scorer_id": player_id, "scorer": player_name},
+                        {"team": current_club, "scorer_id": player_id, "scorer": player_name},
+                        {"team": current_club, "scorer_id": player_id, "scorer": player_name},
+                        {"team": current_club, "scorer_id": player_id, "scorer": player_name},
+                    ],
                 }],
             }]
 
@@ -594,7 +599,7 @@ class SimulatorTests(unittest.TestCase):
             current_club_rows = game.career_player_legends(team=current_club, limit=100)
             retained = next(row for row in current_club_rows["goals"] if row["player_id"] == player_id)
             self.assertEqual((retained["apps"], retained["goals"], retained["assists"]),
-                             (5, 1, 1))
+                             (5, 3, 1))
 
     def test_full_season_and_roster_invariants(self):
         with tempfile.TemporaryDirectory() as tmp:
