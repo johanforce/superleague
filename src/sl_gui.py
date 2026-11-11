@@ -2262,6 +2262,8 @@ class SuperLeagueApp:
         self.squad_tabs.pack(fill="both", expand=True)
         overview_page = self.squad_tabs.add("overview", "Đội hình & học viện")
         legacy = self.squad_tabs.add("legacy", "Danh hiệu & huyền thoại")
+        history_page = self.squad_tabs.add("history", "Lịch sử & thống kê")
+        self._build_club_history(history_page)
         management_page = self.squad_tabs.add("management", "Quản lý CLB")
         self.club_management_tabs = Segmented(management_page, hint="Thông tin tài chính, chuyển nhượng và hợp đồng do AI tự quyết định · Chế độ chỉ xem")
         self.club_management_tabs.pack(fill="both", expand=True)
@@ -2378,6 +2380,101 @@ class SuperLeagueApp:
         self.club_trophy_vars = {}
         self._build_trophy_cards(legacy, "club")
         self.club_legend_trees = self._build_legend_tabs(legacy, "club", include_team=False)
+
+    def _build_club_history(self, parent):
+        """Create season-by-season, competition, match and all-time club views."""
+        self._caption(parent, "Thành tích & thống kê toàn thời gian",
+                      "Dữ liệu ghép từ các mùa đã lưu và mùa đang diễn ra; tỷ số hòa sau 90 phút vẫn tính là hòa dù có luân lưu.")
+        stats_host = tk.Frame(parent, bg=BG)
+        stats_host.pack(fill="x", pady=(0, 10))
+        self.club_history_stats_vars = {}
+        stat_items = (
+            ("matches", "Tổng số trận"), ("wins", "Thắng"), ("draws", "Hòa"),
+            ("losses", "Thua"), ("top_scorer", "Vua phá lưới CLB"),
+            ("top_assister", "Kiến tạo nhiều nhất"), ("biggest_win", "Thắng đậm nhất"),
+            ("biggest_loss", "Thua đậm nhất"), ("first_match", "Trận đầu tiên"),
+        )
+        for index, (key, label) in enumerate(stat_items):
+            card = make_card(stats_host, SURFACE)
+            card.grid(row=index // 3, column=index % 3, sticky="nsew",
+                      padx=(0 if index % 3 == 0 else 5, 5), pady=4)
+            stats_host.columnconfigure(index % 3, weight=1, uniform="club_history_stats")
+            body = tk.Frame(card, bg=SURFACE)
+            body.pack(fill="both", expand=True, padx=10, pady=8)
+            tk.Label(body, text=label, font=F(8), bg=SURFACE, fg=MUTED).pack(anchor="w")
+            value = tk.StringVar(value="—")
+            tk.Label(body, textvariable=value, font=F(10, "bold"), bg=SURFACE,
+                     fg=TEXT, anchor="w", justify="left", wraplength=280).pack(fill="x", pady=(3, 0))
+            self.club_history_stats_vars[key] = value
+
+        self.club_history_tabs = Segmented(parent, hint="Lịch sử CLB theo mùa, theo giải, danh sách trận và Top 11 ra sân")
+        self.club_history_tabs.pack(fill="both", expand=True)
+        by_season = self.club_history_tabs.add("by_season", "Theo mùa")
+        self.club_history_season_tree = self._tree(by_season, [
+            ("season", "Mùa", 80), ("premier", "Premier", 95), ("fc1", "FC1", 75),
+            ("fc2", "FC2", 75), ("cup", "Major Cup", 115), ("c1", "C1", 115),
+        ], height=12)
+        by_competition = self.club_history_tabs.add("by_competition", "Theo giải")
+        self.club_history_comp_tree = self._tree(by_competition, [
+            ("competition", "Giải đấu", 210), ("season", "Mùa", 90), ("finish", "Thành tích", 180),
+        ], height=14)
+        matches_page = self.club_history_tabs.add("matches", "Lịch sử trận")
+        controls = tk.Frame(matches_page, bg=BG)
+        controls.pack(fill="x", pady=(0, 7))
+        tk.Label(controls, text="Mùa giải", font=F(9, "bold"), bg=BG, fg=MUTED).pack(side="left")
+        self.club_history_season_var = tk.StringVar(value="")
+        self.club_history_season_combo = ttk.Combobox(
+            controls, textvariable=self.club_history_season_var, state="readonly", width=14
+        )
+        self.club_history_season_combo.pack(side="left", padx=(8, 0))
+        self.club_history_season_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_club_history_matches())
+        tk.Label(controls, text="Nhấp đúp trận đã đá để xem báo cáo.", font=F(8),
+                 bg=BG, fg=MUTED).pack(side="left", padx=12)
+        self.club_history_match_tree = self._tree(matches_page, [
+            ("date", "Ngày", 95), ("competition", "Giải", 145), ("round", "Vòng", 175),
+            ("home", "Chủ nhà", 190), ("score", "Tỷ số", 75), ("away", "Đội khách", 190),
+            ("result", "Kết quả CLB", 100),
+        ], height=16)
+        self.club_history_match_lookup = {}
+        self.club_history_match_tree.bind("<Double-1>", self._open_club_history_match)
+        self.club_history_match_tree.bind("<Return>", self._open_club_history_match)
+        top11_page = self.club_history_tabs.add("top11", "Top 11 ra sân")
+        self.club_history_top11_tree = self._tree(top11_page, [
+            ("rank", "#", 42), ("player", "Cầu thủ", 210), ("position", "VT", 55),
+            ("apps", "Số trận", 85), ("goals", "Bàn", 70), ("assists", "Kiến tạo", 85),
+        ], height=12)
+        self._club_history_data = None
+
+    def _refresh_club_history_matches(self):
+        tree = getattr(self, "club_history_match_tree", None)
+        data = getattr(self, "_club_history_data", None)
+        if tree is None or not data:
+            return
+        selected = str(self.club_history_season_var.get() or "")
+        season = int(selected) if selected.isdigit() else None
+        rows = [row for row in data.get("matches", [])
+                if season is None or int(row.get("season", season) or season) == season]
+        self.club_history_match_lookup = {str(row.get("id")): row for row in rows}
+        self._set_tree(tree, rows, lambda _i, row: (
+            row.get("date", "—"), row.get("comp", "—"), row.get("round", "—"),
+            row.get("home", "—"), f"{row.get('hg', '—')}–{row.get('ag', '—')}",
+            row.get("away", "—"),
+            ("Thắng" if ((row.get("home") == self._club_history_data.get("team") and int(row.get("hg", 0)) > int(row.get("ag", 0))) or
+                         (row.get("away") == self._club_history_data.get("team") and int(row.get("ag", 0)) > int(row.get("hg", 0))))
+             else "Hòa" if int(row.get("hg", 0)) == int(row.get("ag", 0)) else "Thua")),
+            iid_of=lambda _i, row: str(row.get("id") or f"{row.get('season')}_{row.get('date')}_{row.get('home')}"))
+        if not rows:
+            tree.insert("", "end", values=("—", "—", "Chưa có trận", "", "", "", ""))
+
+    def _open_club_history_match(self, event=None):
+        tree = getattr(self, "club_history_match_tree", None)
+        if tree is None:
+            return
+        iid = tree.identify_row(event.y) if event is not None and getattr(event, "y", None) is not None else (
+            tree.selection()[0] if tree.selection() else "")
+        row = getattr(self, "club_history_match_lookup", {}).get(str(iid))
+        if row:
+            self._show_match_report(row)
 
     def _build_trophy_cards(self, parent, prefix):
         """Compact six-card trophy summary; values are filled from career history."""
@@ -4004,6 +4101,7 @@ class SuperLeagueApp:
             f"{row['potential']:.1f}", row["talent"]),
             iid_of=lambda _i, row: row["iid"])
         self.refresh_club_analytics(team)
+        self.refresh_club_history(team)
         self._refresh_club_economy_views(team)
 
     def _refresh_club_economy_views(self, team):
@@ -4928,6 +5026,54 @@ class SuperLeagueApp:
             variable.set(str(trophies.get(key, 0)))
         legends = self.game.career_player_legends(team=team, limit=11)
         self._refresh_legend_trees(self.club_legend_trees, legends, include_team=False)
+
+    def refresh_club_history(self, team):
+        if not hasattr(self, "club_history_stats_vars"):
+            return
+        data = self.game.club_history_analytics(team)
+        data["team"] = team
+        self._club_history_data = data
+        stats = data.get("stats", {})
+        def match_text(match):
+            if not match:
+                return "Chưa có"
+            return (f"{match.get('home')} {match.get('hg')}–{match.get('ag')} "
+                    f"{match.get('away')} · {match.get('date')} · {match.get('comp')}")
+        scorer = stats.get("top_scorer") or {}
+        assister = stats.get("top_assister") or {}
+        values = {
+            "matches": str(stats.get("matches", 0)),
+            "wins": str(stats.get("wins", 0)),
+            "draws": str(stats.get("draws", 0)),
+            "losses": str(stats.get("losses", 0)),
+            "top_scorer": (f"{scorer.get('player')} · {scorer.get('goals')} bàn" if scorer else "Chưa có"),
+            "top_assister": (f"{assister.get('player')} · {assister.get('assists')} kiến tạo" if assister else "Chưa có"),
+            "biggest_win": match_text(stats.get("biggest_win")),
+            "biggest_loss": match_text(stats.get("biggest_loss")),
+            "first_match": match_text(stats.get("first_match")),
+        }
+        for key, variable in self.club_history_stats_vars.items():
+            variable.set(values.get(key, "—"))
+        self._set_tree(self.club_history_season_tree, data.get("by_season", []), lambda _i, row: (
+            row.get("season"), row.get("premier", "—"), row.get("fc1", "—"),
+            row.get("fc2", "—"), row.get("cup", "—"), row.get("c1", "—")))
+        self._set_tree(self.club_history_comp_tree, data.get("by_competition", []), lambda _i, row: (
+            row.get("competition", "—"), row.get("season", "—"), row.get("finish", "—")))
+        if not data.get("by_season"):
+            self.club_history_season_tree.insert("", "end", values=("—", "Chưa có dữ liệu", "", "", "", ""))
+        if not data.get("by_competition"):
+            self.club_history_comp_tree.insert("", "end", values=("—", "—", "Chưa có thành tích"))
+        seasons = [str(value) for value in data.get("seasons", [])]
+        self.club_history_season_combo.configure(values=seasons)
+        if self.club_history_season_var.get() not in seasons:
+            self.club_history_season_var.set(seasons[0] if seasons else "")
+        self._refresh_club_history_matches()
+        top11 = data.get("top11", [])
+        self._set_tree(self.club_history_top11_tree, top11, lambda i, row: (
+            i + 1, row.get("player", "—"), row.get("position", "—"),
+            row.get("apps", 0), row.get("goals", 0), row.get("assists", 0)))
+        if not top11:
+            self.club_history_top11_tree.insert("", "end", values=("—", "Chưa có dữ liệu ra sân", "", "", "", ""))
 
     def refresh_development(self):
         rows=self.game.s.get("last_development",[])
