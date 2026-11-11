@@ -2461,7 +2461,8 @@ class SuperLeagueApp:
         rows.sort(key=lambda row: (int(row.get("season", 0) or 0), str(row.get("date", "")),
                                    int(row.get("id", 0) or 0)), reverse=True)
         self.club_history_match_lookup = {
-            f"{index}_{row.get('season')}_{row.get('id')}": row for index, row in enumerate(rows)
+            f"{index}_{row.get('season')}_{row.get('id') or row.get('date')}_{row.get('home')}": row
+            for index, row in enumerate(rows)
         }
         self._set_tree(tree, rows, lambda _i, row: (
             row.get("date", "—"), row.get("comp", "—"), row.get("round", "—"),
