@@ -777,6 +777,8 @@ class SimulatorTests(unittest.TestCase):
                     self.assertEqual(weekday, 2, slot)  # Wednesday
             self.assertTrue(game.s["calendar_validation"]["valid"])
             self.assertEqual(game.s["calendar_schedule_version"], 5)
+            slots = {slot["id"]: slot for slot in game.s["slots"]}
+            anchor = date.fromisoformat(game.s["season_start_date"])
             self.assertEqual([date.fromisoformat(slots[f"C1{i}"]["date"]) for i in range(1, 10)],
                              [anchor + timedelta(weeks=week, days=-3)
                               for week in (1, 3, 6, 11, 16, 20, 37, 39, 41)])
