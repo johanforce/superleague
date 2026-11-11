@@ -574,6 +574,15 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(club_data["stats"]["matches"],
                              club_data["stats"]["wins"] + club_data["stats"]["draws"] + club_data["stats"]["losses"])
             self.assertTrue(club_data["stats"]["first_match"])
+            for result_key in ("biggest_win", "biggest_loss"):
+                result = club_data["stats"][result_key]
+                self.assertIsNotNone(result, result_key)
+                self.assertEqual(result["comp"], result["competition"])
+                self.assertIsInstance(result["hg"], int)
+                self.assertIsInstance(result["ag"], int)
+                self.assertTrue(result["home"])
+                self.assertTrue(result["away"])
+                self.assertTrue(result["date"])
             self.assertLessEqual(len(club_data["top11"]), 11)
             self.assertEqual(len(record["qualification_table"]), 24)
             self.assertEqual(len(game.s["history"]), 1)
