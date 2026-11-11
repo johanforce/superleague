@@ -542,8 +542,9 @@ class SuperLeagueApp:
                     for color, label in items:
                         self._legend_item(legend, color, label)
             else:
-                subtitle = ("Hạng 1 lên thẳng · Hạng 3 vs 4 · thắng gặp hạng 2 tranh vé lên Premier" if tier == "fc1"
-                            else "Hạng 1 lên thẳng · Hạng 3 vs 4 · thắng gặp hạng 2 tranh vé lên FC1")
+                subtitle = ("Hạng 1 lên thẳng · Hạng 3–4 đá play-off lên hạng · Hạng 6–7 play-off trụ hạng · Hạng 8 xuống trực tiếp"
+                             if tier == "fc1" else
+                             "Hạng 1 lên thẳng · Hạng 3 vs 4 · thắng gặp hạng 2 tranh vé lên FC1")
                 frame = self._new_page(tier, title, subtitle)
                 seg = Segmented(frame, hint="Bảng giai đoạn 1 và nhánh play-off lên hạng")
                 self.league_segments[tier] = seg
