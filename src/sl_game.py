@@ -6085,8 +6085,12 @@ class Game:
                              if key == "premier" and self.s.get("league_phase2", {}).get("initialized")
                              else self.league_phase1_table(key))
                     pos = next((i for i, row in enumerate(table, 1) if row.get("team") == team), None)
-                return f"Hạng {pos}" if pos else "—"
+                if not pos:
+                    return "—"
+                return f"Tạm thời · Hạng {pos}" if season == current_season and not self.s.get("season_done") else f"Hạng {pos}"
             if key == "cup":
+                if season == current_season and not self.s.get("season_done") and comp_matches:
+                    return "Đang diễn ra"
                 if record.get("champion_cup") == team:
                     return "Vô địch"
                 if record.get("runner_up_cup") == team:
@@ -6095,6 +6099,8 @@ class Game:
                 order = ("cup_final", "cup_sf", "cup_qf", "cup_r16", "cup_r1")
                 furthest = next((stage for stage in order if stage in stages), None)
                 return f"Dừng ở {stage_labels[furthest]}" if furthest else "Không tham dự"
+            if season == current_season and not self.s.get("season_done") and comp_matches:
+                return "Đang diễn ra"
             if record.get("champion_c1") == team or record.get("c1", {}).get("champion") == team:
                 return "Vô địch"
             if record.get("runner_up_c1") == team or record.get("c1", {}).get("runner_up") == team:
