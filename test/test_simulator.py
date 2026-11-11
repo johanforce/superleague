@@ -808,7 +808,8 @@ class SimulatorTests(unittest.TestCase):
             resumed = Game(data_dir=tmp, seed=778812)
             migrated = next(slot for slot in resumed.s["slots"] if slot["id"] == "CUP2")
             resumed_played_slot = next(slot for slot in resumed.s["slots"] if slot["id"] == "L01_FC2")
-            expected = anchor + timedelta(weeks=11, days=1 - anchor.weekday())  # pending calendar shifted one week past the completed Friday slot
+            expected = anchor + timedelta(weeks=game.config["calendar"]["cup_week_offsets"][1],
+                                                days=1 - anchor.weekday())
             self.assertEqual(date.fromisoformat(migrated["date"]), expected)
             self.assertTrue(resumed_played_slot["played"])
             self.assertEqual(resumed_played_slot["date"], played_slot_date)
