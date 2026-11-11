@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "saved_at": "2026-11-01T14:17:42+07:00",
+  "settings": {
+    "min_appearances": 15,
+    "require_premier_champion": true,
+    "require_c1_semifinal": true,
+    "c1_champion_bonus": 5.0,
+    "premier_champion_bonus": 4.0,
+    "c1_runner_up_bonus": 4.0,
+    "premier_runner_up_bonus": 3.0,
+    "major_cup_champion_bonus": 3.0,
+    "weight_rating": 35.0,
+    "weight_contribution": 20.0,
+    "weight_motm": 35.0,
+    "weight_minutes": 10.0
+  },
+  "note": "Được lưu từ Award Recalculator; app chính sẽ nạp khi khởi động."
+}

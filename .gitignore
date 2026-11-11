@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.tox/
+build/
+dist/
+*.log
+
+# Machine-local Google credentials must never be committed or exported.
+credentials/*.json
+!credentials/.gitkeep
+
+# Single-file local simulator storage. Keep the seeded database in the project;
+# ignore only transient SQLite journals and OS/editor temporary files.
+memory/*.tmp
+memory/**/*.tmp
+memory/.super_league.*.tmp
+memory/super_league.db-journal
+memory/super_league.db-wal
+memory/super_league.db-shm
+
+
+# IDE / editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db

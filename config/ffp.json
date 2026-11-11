@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "wage_revenue_ratio_limit": 0.75,
+  "three_year_loss_limit": {
+    "big": 90.0,
+    "medium": 65.0,
+    "small": 50.0
+  },
+  "transfer_ban_windows": 1,
+  "loss_window_seasons": 3,
+  "point_deduction": 3,
+  "note": "Calculates wage plus transfer amortisation against revenue, tracks rolling three-season aggregate losses, applies transfer bans and issues configurable league-point deductions for the following season."
+}

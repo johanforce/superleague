@@ -1,0 +1,25 @@
+{
+  "monthly_accounting_enabled": true,
+  "annual_costs": {
+    "big": 60.0,
+    "medium": 42.0,
+    "small": 30.0
+  },
+  "annual_income": {
+    "sponsor": {"big": 105.0, "medium": 54.0, "small": 27.0},
+    "merchandise": {"big": 75.0, "medium": 41.0, "small": 20.0},
+    "fan_base_reference": {"big": 8000000, "medium": 3500000, "small": 1200000}
+  },
+  "annual_debt_interest": 0.04,
+  "competition_multipliers": {
+    "PL": 1.0,
+    "C1": 1.8,
+    "FC1": 1.3,
+    "FC2": 1.1,
+    "CUP": 0.9
+  },
+  "hospitality_price_factor": 4.0,
+  "per_fan_spend_eur": 8.0,
+  "sell_out_bonus_rate": 0.07,
+  "neutral_final_team_share": 0.70
+}

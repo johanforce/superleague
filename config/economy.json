@@ -1,0 +1,210 @@
+{
+  "feature_flags": {
+    "ENABLE_ECONOMY": true,
+    "ENABLE_TRANSFERS": true,
+    "ENABLE_AI_TRANSFER_DIRECTOR": true,
+    "ENABLE_FFP": true,
+    "ENABLE_YOUTH_INTAKE": false,
+    "ENABLE_STADIUMS": true,
+    "ENABLE_HOME_ADVANTAGE": false
+  },
+  "division_tier_mapping": {
+    "premier": "big",
+    "fc1": "medium",
+    "fc2": "small"
+  },
+  "tier_mapping": {
+    "elite": "big",
+    "middle": "medium",
+    "standard": "small"
+  },
+  "initial_finance": {
+    "variance": 0.1,
+    "big": {
+      "balance": 300.0,
+      "transfer_budget": 110.0,
+      "wage_budget": 230.0,
+      "reputation": [
+        85,
+        95
+      ],
+      "fan_base": [
+        5000000,
+        12000000
+      ]
+    },
+    "medium": {
+      "balance": 200.0,
+      "transfer_budget": 80.0,
+      "wage_budget": 170.0,
+      "reputation": [
+        60,
+        75
+      ],
+      "fan_base": [
+        2000000,
+        5000000
+      ]
+    },
+    "small": {
+      "balance": 150.0,
+      "transfer_budget": 55.0,
+      "wage_budget": 125.0,
+      "reputation": [
+        35,
+        55
+      ],
+      "fan_base": [
+        500000,
+        2000000
+      ]
+    }
+  },
+  "wages": {
+    "base_multiplier": 0.1,
+    "ovr_exponent": 0.17,
+    "age_factors": {
+      "u21": 0.85,
+      "22_28": 1.0,
+      "29_31": 1.05,
+      "32_34": 0.85,
+      "35_plus": 0.65
+    },
+    "potential_per_point": 0.015,
+    "position_factors": {
+      "GK": 0.85,
+      "DEF": 0.95,
+      "MID": 1.0,
+      "FWD": 1.1
+    },
+    "club_factors": {
+      "big": 1.1,
+      "medium": 1.0,
+      "small": 0.92
+    },
+    "star_factor": 1.1,
+    "top_star_count": 3,
+    "round_to": 0.05,
+    "max_annual_wage": 35.0,
+    "initial_budget_bump_cap": 1.1,
+    "scale_down_threshold": 0.85,
+    "scale_down_target": 0.8,
+    "scale_up_threshold": 0.5,
+    "max_scale_up": 1.15
+  },
+  "market_value": {
+    "model_version": 2,
+    "base_coefficient": 0.03,
+    "base_rating": 50.0,
+    "attribute_delta_factor": 0.0075,
+    "attribute_factor_min": 0.92,
+    "attribute_factor_max": 1.08,
+    "age_curve": [
+      [
+        16,
+        1.3
+      ],
+      [
+        18,
+        1.26
+      ],
+      [
+        20,
+        1.22
+      ],
+      [
+        22,
+        1.15
+      ],
+      [
+        24,
+        1.06
+      ],
+      [
+        27,
+        1.0
+      ],
+      [
+        29,
+        0.9
+      ],
+      [
+        31,
+        0.76
+      ],
+      [
+        33,
+        0.6
+      ],
+      [
+        35,
+        0.44
+      ],
+      [
+        38,
+        0.28
+      ],
+      [
+        40,
+        0.2
+      ]
+    ],
+    "potential_premium": [
+      {
+        "max_age": 20,
+        "per_point": 0.025,
+        "max_bonus": 0.45
+      },
+      {
+        "max_age": 23,
+        "per_point": 0.02,
+        "max_bonus": 0.3
+      },
+      {
+        "max_age": 25,
+        "per_point": 0.01,
+        "max_bonus": 0.12
+      }
+    ],
+    "min_value": 0.05,
+    "max_value": 250.0
+  },
+  "contracts": {
+    "default_years": 3,
+    "remaining_year_weights": {
+      "1": 30,
+      "2": 35,
+      "3": 35
+    },
+    "uniform_initial_contract": false,
+    "role_prospect_max_age": 21,
+    "role_prospect_min_potential_gap": 8.0,
+    "termination_compensation_pct": 50.0
+  },
+  "squad_rules": {
+    "min_size": 23,
+    "max_size": 30,
+    "minimum_groups": {
+      "GK": 3,
+      "DEF": 7,
+      "MID": 7,
+      "FWD": 4
+    },
+    "minimum_each_group": 2
+  },
+  "transfer_windows": {
+    "winter_months": [
+      11,
+      12
+    ],
+    "summer_months": [
+      6,
+      7,
+      8
+    ],
+    "allow_free_agent_outside_window": true,
+    "max_deals_per_window": 8
+  },
+  "prize_money_file": "prize_money.json",
+  "club_finance_overrides_file": "club_finance_overrides.json"
+}

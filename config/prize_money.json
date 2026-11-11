@@ -1,0 +1,108 @@
+{
+  "currency_unit": "M€",
+  "note": "Prize ladders will be connected to actual match/stage hooks in P2. Values below are editable starting points from the project brief. Actual project mapping: Cup uses CUP, Football Championship 1 uses FC1_LEAGUE, Football Championship 2 uses FC2_LEAGUE. The 8-place ladders fit the current 8-club divisions.",
+  "C1": {
+    "participation": 18.6,
+    "per_win": 2.1,
+    "per_draw": 0.7,
+    "per_loss": 0.0,
+    "stages": {
+      "playoff": 1.0,
+      "round_of_16": 11.0,
+      "quarter_final": 12.5,
+      "semi_final": 15.0,
+      "final": 18.5,
+      "winner_bonus": 6.5
+    }
+  },
+  "PL": {
+    "per_win": 0.8,
+    "per_draw": 0.25,
+    "per_loss": 0.0,
+    "position_prize": [
+      45.0,
+      43.0,
+      41.0,
+      39.0,
+      37.0,
+      35.0,
+      33.0,
+      31.0
+    ],
+    "tv_equal_share": 0.0
+  },
+  "FC1": {
+    "participation": 4.3,
+    "per_win": 0.8,
+    "per_draw": 0.27,
+    "per_loss": 0.0,
+    "stages": {
+      "round_of_16": 1.5,
+      "quarter_final": 2.5,
+      "semi_final": 4.0,
+      "final": 6.0,
+      "winner_bonus": 8.0
+    }
+  },
+  "FC2": {
+    "participation": 3.0,
+    "per_win": 0.4,
+    "per_draw": 0.13,
+    "per_loss": 0.0,
+    "stages": {
+      "round_of_16": 0.6,
+      "quarter_final": 1.0,
+      "semi_final": 1.5,
+      "final": 2.0,
+      "winner_bonus": 3.0
+    }
+  },
+  "CUP": {
+    "participation": 1.0,
+    "per_win": 0.15,
+    "per_draw": 0.05,
+    "per_loss": 0.0,
+    "stages": {
+      "round_of_16": 1.5,
+      "quarter_final": 2.5,
+      "semi_final": 4.0,
+      "final": 6.0,
+      "winner_bonus": 8.0
+    }
+  },
+  "FC1_LEAGUE": {
+    "per_win": 0.35,
+    "per_draw": 0.12,
+    "per_loss": 0.0,
+    "position_prize": [
+      12.0,
+      10.5,
+      9.0,
+      7.5,
+      6.0,
+      5.0,
+      4.0,
+      3.0
+    ]
+  },
+  "FC2_LEAGUE": {
+    "per_win": 0.18,
+    "per_draw": 0.06,
+    "per_loss": 0.0,
+    "position_prize": [
+      6.0,
+      5.2,
+      4.4,
+      3.6,
+      3.0,
+      2.4,
+      1.8,
+      1.2
+    ]
+  },
+  "broadcast_pools": {
+    "premier": 1200.0,
+    "fc1": 1120.0,
+    "fc2": 880.0
+  }
+}

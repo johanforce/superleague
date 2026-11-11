@@ -1,0 +1,39 @@
+Super League Single Database
+Package: SuperLeague_SINGLE_DATABASE_FIXED
+Storage: memory/super_league.db only
+SQLite schema: 5
+Seed catalogue: 552 source players + reference names embedded in SQLite
+Startup: src/sl_game.py loads source_players from SQLite; no CSV source dependency
+
+Base package: SuperLeague_GOALS_FIX_v2.zip (used as the sole code/database baseline)
+Existing patch retained: PLAYER_PROFILE_MATCH_HISTORY_FIX_1
+New patches: NEWS_RETENTION_TWO_SIMULATION_WEEKS + STORAGE_DEDUP_INCREMENTAL_ARCHIVES
+
+News retention patch:
+- Keep dated news for the current simulation week and the immediately previous simulation week (Monday-Sunday).
+- Prune old news on startup, before save, and at the SQLite persistence boundary.
+- Rebuild news_items on every save; old rows cannot accumulate.
+- Startup backfill only recreates current/previous-week match articles, so deleted historical news is not regenerated.
+- The initial database has been pruned to the same two-week window and vacuumed.
+
+Storage de-duplication patch:
+- Completed archives are incrementally upserted; unchanged seasons are not rewritten.
+- Match, finance transaction, and award SQL copies are no longer written; canonical data remains in career_state/season_archives.
+- Exact duplicate player-career/development projection rows are removed once; unmatched legacy rows are preserved.
+- player_season_stats is retained because its detailed per-season fields are not fully represented by compact archives.
+- Existing package database was compacted and vacuumed after integrity and data-equivalence checks.
+
+Preserved data:
+- All 8 completed season archives (2026-2033).
+- All 2,213 match records remain in their canonical locations: 1,968 in the eight completed-season archives and 245 in the active career state.
+- Player profiles, season stats, development records, award history, finance ledger and transfers are preserved; only exact SQL duplicates are removed.
+- 51 unmatched legacy player-career rows and 182 unmatched legacy player-development rows remain preserved in their supplemental tables.
+- The only canonical career-state payload intentionally removed is news outside the two-week window.
+
+Storage compaction result on the packaged save:
+- Database size after news retention only: 56.29 MiB.
+- Database size after exact duplicate projection cleanup + VACUUM: 33.62 MiB.
+- Eight completed archives (2026-2033) preserved byte-for-byte; active 2034 career state preserved semantically and byte-for-byte.
+- 1,968 archived matches + 245 active matches preserved (2,213 total).
+- Projection rows after compaction: matches=0, finance_transactions=0, awards=0, player_career=51 unmatched legacy rows, player_development=182 unmatched legacy rows, player_season_stats=5,195 retained detailed rows.
+- SQLite integrity_check: ok.

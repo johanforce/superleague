@@ -1,0 +1,3 @@
+# Google Sheets service-account client + Pillow screenshot capture.
+google-auth[requests]>=2.29,<3
+Pillow>=10,<12

@@ -1,0 +1,272 @@
+{
+  "seed": 20261029,
+  "teams": {
+    "premier": 8,
+    "fc1": 8,
+    "fc2": 8,
+    "promotions": 2
+  },
+  "cup": {
+    "teams": 24,
+    "legs": 1,
+    "final_neutral": true,
+    "home_rule": "lower_seed"
+  },
+  "c1": {
+    "direct": 4,
+    "playin": 8,
+    "playin_groups": 2,
+    "playin_qualify_per_group": 2,
+    "main_groups": 2,
+    "main_group_legs": 1,
+    "advance_per_group": 2,
+    "semis_legs": 2,
+    "final_neutral": true
+  },
+  "points": {
+    "premier": {
+      "positions": [
+        100,
+        96,
+        92,
+        88,
+        84,
+        80,
+        76,
+        72
+      ]
+    },
+    "fc1": {
+      "positions": [
+        76,
+        68,
+        62,
+        56,
+        50,
+        44,
+        38,
+        32
+      ],
+      "promotion_playoff_winner": 74
+    },
+    "fc2": {
+      "positions": [
+        46,
+        24,
+        20,
+        16,
+        12,
+        8,
+        4,
+        2
+      ],
+      "promotion_playoff_winner": 34
+    },
+    "cup": {
+      "winner": 40,
+      "final": 30,
+      "sf": 22,
+      "qf": 14,
+      "r16": 8,
+      "r1": 3
+    },
+    "history_weight": 0.0
+  },
+  "calendar": {
+    "start_date": "2026-08-01",
+    "league_day": "sat",
+    "midweek_day": "wed",
+    "min_rest_days": 3,
+    "league_week_offsets": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      8,
+      10,
+      11,
+      12,
+      13,
+      15,
+      17
+    ],
+    "cup_week_offsets": [
+      5,
+      10,
+      15,
+      17,
+      33
+    ],
+    "c1_week_offsets": [
+      1,
+      3,
+      6,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "league_phase2_week_offsets": [
+      30,
+      31,
+      32,
+      33,
+      34,
+      35
+    ],
+    "fc2_day": "fri",
+    "fc1_day": "sun",
+    "cup_day": "tue",
+    "fc2_week_offsets": [
+      0,
+      2,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      17,
+      19
+    ],
+    "cup_final_after_premier_round": 3
+  },
+  "players": {
+    "squad_size": 23,
+    "keep_position_template": true,
+    "academy_size": 6,
+    "soft_cap_from": 85,
+    "potential_range": [
+      68,
+      94
+    ],
+    "retire_table_outfield": {
+      "33": 0.03,
+      "34": 0.12,
+      "35": 0.3,
+      "36": 0.55,
+      "37": 0.8,
+      "38": 1.0
+    },
+    "retire_table_gk": {
+      "33": 0.0,
+      "34": 0.04,
+      "35": 0.12,
+      "36": 0.3,
+      "37": 0.55,
+      "38": 0.85,
+      "40": 1.0
+    },
+    "youth_age": [
+      16,
+      20
+    ],
+    "injury_permanent_probability": 0.25,
+    "academy_talent": {
+      "elite_teams": [
+        "BLack Sam",
+        "Black Hunter",
+        "AssassinS FC",
+        "Fury Fighter",
+        "Knight Castle"
+      ],
+      "middle_teams": [
+        "Yellow Thunder FC",
+        "Poseidon FC",
+        "Savior FC",
+        "Silver Moon"
+      ],
+      "profiles": {
+        "elite": {
+          "superstar_probability": 0.18,
+          "potential_range": [
+            90,
+            99
+          ],
+          "overall_range": [
+            78,
+            86
+          ]
+        },
+        "middle": {
+          "superstar_probability": 0.1,
+          "potential_range": [
+            87,
+            98
+          ],
+          "overall_range": [
+            74,
+            83
+          ]
+        },
+        "standard": {
+          "superstar_probability": 0.025,
+          "potential_range": [
+            85,
+            96
+          ],
+          "overall_range": [
+            70,
+            80
+          ]
+        }
+      }
+    }
+  },
+  "engine": {
+    "base_xg": 1.22,
+    "gap_scale": 28.0,
+    "gap_cap": 0.72,
+    "home_factor": 1.055,
+    "away_factor": 0.945,
+    "xg_min": 0.25,
+    "xg_max": 2.65,
+    "et_xg_factor": 0.23,
+    "shots_per_xg": 8.2,
+    "sot_ratio_min": 0.3,
+    "sot_ratio_max": 0.43,
+    "possession_gap_weight": 1.35,
+    "possession_noise": 2.6,
+    "assist_probability": 0.76,
+    "shootout_home_probability": 0.76,
+    "shootout_away_probability": 0.74,
+    "form_effect": 2.1,
+    "fit_threshold": 70.0,
+    "fit_penalty_per_point": 0.035,
+    "effective_min": -3.0,
+    "effective_max": 2.5,
+    "elo_k": 18.0,
+    "elo_home_advantage": 45.0,
+    "elo_margin_bonus": 0.08,
+    "elo_margin_cap": 1.5
+  },
+  "match_engine": "enhanced",
+  "google_sheets": {
+    "enabled": false,
+    "spreadsheet_id": "",
+    "service_account_file": "credentials/google_service_account.json",
+    "worksheet_prefix": "Mùa",
+    "sync_on_startup": false,
+    "sync_after_each_save": true,
+    "debounce_seconds": 1.0,
+    "timeout_seconds": 30,
+    "retry_delays_seconds": [
+      5,
+      15,
+      60,
+      180,
+      300
+    ],
+    "apps_script_url": "",
+    "apps_script_token": ""
+  }
+}

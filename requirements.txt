@@ -1,0 +1,2 @@
+# Core simulator: Python 3.10+ and Tkinter; no third-party packages required.
+# Optional Google Sheets integration: install requirements-google-sheets.txt

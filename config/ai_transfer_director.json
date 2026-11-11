@@ -1,0 +1,80 @@
+{
+  "enabled": true,
+  "target_squad_size": 25,
+  "max_total_deals_per_window": 12,
+  "max_deals_per_team_per_window": 1,
+  "max_targets_per_team": 8,
+  "min_target_score": 42.0,
+  "max_transfer_budget_share": 0.35,
+  "minimum_cash_reserve_m": 10.0,
+  "tier_policies": {
+    "big": {
+      "target_squad_size": 27,
+      "target_ovr": 96.0,
+      "max_transfer_budget_share": 0.5,
+      "minimum_cash_reserve_m": 25.0,
+      "min_target_score": 38.0
+    },
+    "medium": {
+      "target_squad_size": 25,
+      "target_ovr": 92.0,
+      "max_transfer_budget_share": 0.35,
+      "minimum_cash_reserve_m": 15.0,
+      "min_target_score": 42.0
+    },
+    "small": {
+      "target_squad_size": 24,
+      "target_ovr": 86.0,
+      "max_transfer_budget_share": 0.2,
+      "minimum_cash_reserve_m": 10.0,
+      "min_target_score": 47.0
+    }
+  },
+  "excluded_teams": [],
+  "renewals_enabled": true,
+  "max_renewals_per_team_per_season": 2,
+  "sales_enabled": true,
+  "max_sales_per_team_per_window": 1,
+  "minimum_sale_score": 25.0,
+  "minimum_sale_score_at_target": 38.0,
+  "fire_sale": {
+    "enabled": true,
+    "cash_threshold_m": {
+      "big": 5.0,
+      "medium": 3.0,
+      "small": 2.0
+    },
+    "minimum_sale_score": 18.0
+  },
+  "loans": {
+    "enabled": true,
+    "max_total_per_window": 4,
+    "max_per_team_per_window": 1,
+    "max_prospect_age": 23,
+    "minimum_potential_gap": 4.0,
+    "minimum_ovr_vs_need": 5.0,
+    "borrower_wage_share_pct": {
+      "big": 65.0,
+      "medium": 60.0,
+      "small": 55.0
+    },
+    "loan_fee_market_value_pct": 1.0,
+    "max_loan_fee_m": 0.5,
+    "option_to_buy": false,
+    "option_to_buy_market_value_multiplier": 1.15,
+    "borrower_tiers": [
+      "small",
+      "medium"
+    ],
+    "parent_tiers": [
+      "big",
+      "medium"
+    ]
+  },
+  "swaps": {
+    "enabled": true,
+    "max_total_per_window": 2,
+    "minimum_incoming_ovr_gap": 8.0,
+    "max_cash_adjustment_m": 15.0
+  }
+}

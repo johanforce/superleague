@@ -1,0 +1,15 @@
+{
+  "winter_months": [
+    11,
+    12
+  ],
+  "summer_months": [
+    6,
+    7,
+    8
+  ],
+  "allow_free_agent_outside_window": true,
+  "max_deals_per_window": 8,
+  "max_approaches_per_window": 5,
+  "same_player_cooldown_days": 14
+}
