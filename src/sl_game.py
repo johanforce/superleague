@@ -967,7 +967,7 @@ class Game:
         league_offsets = calendar_cfg.get("league_week_offsets", [0,1,2,3,5,6,7,8,10,11,12,13,15,17])
         fc2_offsets = calendar_cfg.get("fc2_week_offsets", [0,2,4,5,7,8,9,10,12,13,14,15,17,19])
         cup_offsets = calendar_cfg.get("cup_week_offsets", [5,10,15,17,33])
-        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,36,37,38,39,40,41])
+        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,11,16,20,37,39,41])
         phase2_offsets = calendar_cfg.get("league_phase2_week_offsets", [30,31,32,33,34,35])
         tier_weekdays = {"fc2": fc2_wd, "premier": premier_wd, "fc1": fc1_wd}
         matches_by_id = {int(m.get("id", -1)): m for m in self.s.get("matches", [])}
@@ -1035,6 +1035,41 @@ class Game:
         validate_calendar_slots(self.s["slots"], min_rest)
         self._update_calendar_validation_metadata()
 
+    def _migrate_v4_calendar_to_v5(self):
+        """Add FC1 survival legs and interleave C1 rounds without rewriting played results."""
+        if self.s.get("season_done"):
+            self.s["calendar_schedule_version"] = 5
+            return
+        cfg = self.config["calendar"]
+        anchor = _safe_date(self.s.get("season_start_date") or cfg.get("start_date"))
+        c1_wd = _weekday_number(cfg.get("midweek_day", "wed"), "midweek_day")
+        fc1_wd = _weekday_number(cfg.get("fc1_day", "sun"), "fc1_day")
+        c1_offsets = cfg.get("c1_week_offsets", [1, 3, 6, 11, 16, 20, 37, 39, 41])
+        slots = list(self.s.get("slots", []))
+        by_id = {str(slot.get("id")): slot for slot in slots}
+        for index, week in enumerate(c1_offsets, 1):
+            slot = by_id.get(f"C1{index}")
+            if slot and not slot.get("played") and not slot.get("fixture_result_ids"):
+                slot["date"] = _date_in_week(anchor, week, c1_wd).isoformat()
+        phase2_offsets = cfg.get("league_phase2_week_offsets", [30, 31, 32, 33, 34, 35])
+        for round_no, week_index, leg_label in ((4, 3, "Lượt đi"), (6, 5, "Lượt về")):
+            slot_id = f"P2FC1R{round_no:02d}"
+            if slot_id in by_id:
+                continue
+            slots.append({
+                "id": slot_id,
+                "date": _date_in_week(anchor, phase2_offsets[week_index], fc1_wd).isoformat(),
+                "kind": "league_phase2", "phase2_tier": "fc1", "round": round_no,
+                "label": f"FC1 · Play-off trụ hạng · {leg_label}",
+                "played": False, "fixture_result_ids": {}, "match_ids": [],
+            })
+        self.s["slots"] = slots
+        self._shift_pending_calendar_after_played_matches()
+        self.s["slots"] = sorted(slots, key=lambda item: (str(item.get("date", "")), str(item.get("id", ""))))
+        self.s["calendar_schedule_version"] = 5
+        validate_calendar_slots(self.s["slots"], int(cfg.get("min_rest_days", 3)))
+        self._update_calendar_validation_metadata()
+
     def _migrate_league_phase2_schedule(self):
         """Migrate an in-progress legacy career to competition-specific weekdays.
 
@@ -1050,13 +1085,19 @@ class Game:
             self.s["calendar_schedule_version"] = 4
             return
         schedule_version = int(self.s.get("calendar_schedule_version", 0) or 0)
-        if schedule_version >= 4:
+        if schedule_version >= 5:
             self._update_calendar_validation_metadata()
+            if not self.s.get("league_phase2", {}).get("initialized"):
+                self._initialize_league_phase2_if_ready()
+            return
+        if schedule_version == 4:
+            self._migrate_v4_calendar_to_v5()
             if not self.s.get("league_phase2", {}).get("initialized"):
                 self._initialize_league_phase2_if_ready()
             return
         if schedule_version == 3:
             self._migrate_v3_calendar_to_v4()
+            self._migrate_v4_calendar_to_v5()
             if not self.s.get("league_phase2", {}).get("initialized"):
                 self._initialize_league_phase2_if_ready()
             return
@@ -1082,7 +1123,7 @@ class Game:
         league_offsets = calendar_cfg.get("league_week_offsets", [0,1,2,3,5,6,7,8,10,11,12,13,15,17])
         fc2_offsets = calendar_cfg.get("fc2_week_offsets", [0,2,4,5,7,8,9,10,12,13,14,15,17,19])
         cup_offsets = calendar_cfg.get("cup_week_offsets", [5,10,15,17,33])
-        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,36,37,38,39,40,41])
+        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,11,16,20,37,39,41])
         phase2_offsets = calendar_cfg.get("league_phase2_week_offsets", [30,31,32,33,34,35])
         day_by_tier = {"fc2": fc2_wd, "premier": premier_wd, "fc1": fc1_wd}
         week_offsets_by_tier = {"fc2": fc2_offsets, "premier": league_offsets, "fc1": league_offsets}
@@ -1298,6 +1339,7 @@ class Game:
         self.s["calendar_schedule_version"] = 4
         validate_calendar_slots(self.s["slots"], min_rest)
         self._update_calendar_validation_metadata()
+        self._migrate_v4_calendar_to_v5()
         if not self.s.get("league_phase2", {}).get("initialized"):
             self._initialize_league_phase2_if_ready()
 
@@ -1314,7 +1356,7 @@ class Game:
             "fc2_weekday": str(calendar_cfg.get("fc2_day", "fri")),
             "cup_weekday": str(calendar_cfg.get("cup_day", "tue")),
             "midweek_day": str(calendar_cfg.get("midweek_day", "wed")),
-            "schedule_version": 4,
+            "schedule_version": 5,
         }
 
     def _initialize_league_phase2_if_ready(self):
@@ -2111,7 +2153,7 @@ class Game:
         league_offsets = calendar_cfg.get("league_week_offsets", [0,1,2,3,5,6,7,8,10,11,12,13,15,17])
         fc2_offsets = calendar_cfg.get("fc2_week_offsets", [0,2,4,5,7,8,9,10,12,13,14,15,17,19])
         cup_offsets = calendar_cfg.get("cup_week_offsets", [5,10,15,17,33])
-        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,36,37,38,39,40,41])
+        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,11,16,20,37,39,41])
         phase2_offsets = calendar_cfg.get("league_phase2_week_offsets", [30,31,32,33,34,35])
         tier_weekdays = {"fc2": fc2_weekday, "premier": premier_weekday, "fc1": fc1_weekday}
         tier_week_offsets = {"fc2": fc2_offsets, "premier": league_offsets, "fc1": league_offsets}
