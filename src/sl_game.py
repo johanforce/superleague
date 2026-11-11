@@ -6149,9 +6149,20 @@ class Game:
             else:
                 losses += 1
             margin = abs(gf - ga)
-            detail = {"date": match.get("date", "—"), "competition": match.get("comp", "—"),
-                      "home": match.get("home", ""), "away": match.get("away", ""),
-                      "score": f"{match.get('hg')}–{match.get('ag')}", "margin": margin}
+            home_goals = int(match.get("hg", 0) or 0)
+            away_goals = int(match.get("ag", 0) or 0)
+            competition = match.get("comp") or match.get("competition") or "Không rõ giải"
+            detail = {
+                "date": match.get("date") or "—",
+                "comp": competition,
+                "competition": competition,
+                "home": match.get("home") or "—",
+                "away": match.get("away") or "—",
+                "hg": home_goals,
+                "ag": away_goals,
+                "score": f"{home_goals}–{away_goals}",
+                "margin": margin,
+            }
             if gf > ga and (biggest_win is None or margin > biggest_win["margin"]):
                 biggest_win = detail
             if gf < ga and (biggest_loss is None or margin > biggest_loss["margin"]):
