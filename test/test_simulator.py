@@ -510,6 +510,7 @@ class SimulatorTests(unittest.TestCase):
     def test_full_season_and_roster_invariants(self):
         with tempfile.TemporaryDirectory() as tmp:
             game = Game(data_dir=tmp, fresh=True)
+            self.assertEqual(game.relegation_playoff_summary()["teams"], {})
             # Keep this regression deterministic and independent from a user's
             # local award_settings.json (which may intentionally customize apps).
             game.award_settings = dict(AWARD_SETTINGS_DEFAULTS)
