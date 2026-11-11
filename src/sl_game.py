@@ -6033,6 +6033,130 @@ class Game:
                 "goals": goals[:max(0, int(limit))],
                 "assists": assists[:max(0, int(limit))]}
 
+    def club_history_analytics(self, team):
+        """Build club-only season finishes, match history and all-time statistics."""
+        if not team:
+            return {"seasons": [], "by_season": [], "by_competition": [], "matches": [],
+                    "stats": {}, "top11": []}
+
+        all_matches = [dict(match) for match in self._career_match_records()
+                       if team in (match.get("home"), match.get("away"))]
+        all_matches.sort(key=lambda row: (int(row.get("season", 0) or 0),
+                                          str(row.get("date", "")), int(row.get("id", 0) or 0)))
+        seasons = {}
+        for record in self.s.get("history", []) or []:
+            season = int(record.get("season", 0) or 0)
+            if season:
+                seasons[season] = dict(record)
+        current_season = int(self.s.get("season", 0) or 0)
+        if current_season:
+            current_record = seasons.setdefault(current_season, {})
+            current_record.setdefault("season", current_season)
+            current_record.setdefault("matches", [
+                dict(match) for match in self.s.get("matches", [])
+                if int(match.get("season", current_season) or current_season) == current_season
+            ])
+
+        season_rows = []
+        competition_rows = []
+        competition_names = (("premier", "Premier League"), ("fc1", "FC1"),
+                             ("fc2", "FC2"), ("cup", "Major Cup"), ("c1", "C1"))
+        league_labels = {"premier": "Premier League", "fc1": "Football Championship 1",
+                         "fc2": "Football Championship 2"}
+        stage_labels = {
+            "cup_r1": "Vòng 1", "cup_r16": "Vòng 16", "cup_qf": "Tứ kết",
+            "cup_sf": "Bán kết", "cup_final": "Á quân",
+            "c1_pi": "Play-in", "c1_group": "Vòng bảng",
+            "c1_semi": "Bán kết", "c1_final": "Á quân",
+        }
+
+        def finish_for_competition(record, season, key):
+            record_matches = [m for m in (record.get("matches") or [])
+                              if m.get("played", True) and team in (m.get("home"), m.get("away"))]
+            comp_matches = [m for m in record_matches if (
+                (key == "cup" and m.get("comp") == "Cup") or
+                (key == "c1" and m.get("comp") in ("C1", "C1 Play-in"))
+            )]
+            if key in league_labels:
+                rows = (record.get("leagues", {}) or {}).get(key, []) or []
+                pos = next((i for i, row in enumerate(rows, 1) if row.get("team") == team), None)
+                if pos is None and season == current_season and not self.s.get("season_done"):
+                    table = (self.premier_phase2_tables()["champion"] + self.premier_phase2_tables()["challenge"]
+                             if key == "premier" and self.s.get("league_phase2", {}).get("initialized")
+                             else self.league_phase1_table(key))
+                    pos = next((i for i, row in enumerate(table, 1) if row.get("team") == team), None)
+                return f"Hạng {pos}" if pos else "—"
+            if key == "cup":
+                if record.get("champion_cup") == team:
+                    return "Vô địch"
+                if record.get("runner_up_cup") == team:
+                    return "Á quân"
+                stages = [str(m.get("stage", "")) for m in comp_matches]
+                order = ("cup_final", "cup_sf", "cup_qf", "cup_r16", "cup_r1")
+                furthest = next((stage for stage in order if stage in stages), None)
+                return f"Dừng ở {stage_labels[furthest]}" if furthest else "Không tham dự"
+            if record.get("champion_c1") == team or record.get("c1", {}).get("champion") == team:
+                return "Vô địch"
+            if record.get("runner_up_c1") == team or record.get("c1", {}).get("runner_up") == team:
+                return "Á quân"
+            stages = [str(m.get("stage", "")) for m in comp_matches]
+            if any(stage.startswith("c1_semi") for stage in stages):
+                return "Bán kết"
+            if any(stage.startswith("c1_group") for stage in stages):
+                return "Vòng bảng"
+            if any(stage.startswith("c1_pi") for stage in stages):
+                return "Play-in"
+            return "Không tham dự"
+
+        for season in sorted(seasons, reverse=True):
+            record = seasons[season]
+            row = {"season": season, "label": record.get("label", str(season))}
+            for key, label in competition_names:
+                finish = finish_for_competition(record, season, key)
+                row[key] = finish
+                if finish not in ("—", "Không tham dự"):
+                    competition_rows.append({"competition": label, "season": season, "finish": finish})
+            season_rows.append(row)
+
+        wins = draws = losses = 0
+        biggest_win = biggest_loss = None
+        for match in all_matches:
+            home = match.get("home") == team
+            try:
+                gf = int(match.get("hg" if home else "ag"))
+                ga = int(match.get("ag" if home else "hg"))
+            except (TypeError, ValueError):
+                continue
+            if gf > ga:
+                wins += 1
+            elif gf == ga:
+                # A penalty shoot-out determines progression, not the 90-minute W/D/L.
+                draws += 1
+            else:
+                losses += 1
+            margin = abs(gf - ga)
+            detail = {"date": match.get("date", "—"), "competition": match.get("comp", "—"),
+                      "home": match.get("home", ""), "away": match.get("away", ""),
+                      "score": f"{match.get('hg')}–{match.get('ag')}", "margin": margin}
+            if gf > ga and (biggest_win is None or margin > biggest_win["margin"]):
+                biggest_win = detail
+            if gf < ga and (biggest_loss is None or margin > biggest_loss["margin"]):
+                biggest_loss = detail
+
+        legends = self.career_player_legends(team=team, limit=100000)
+        top_scorer = (legends.get("goals") or [None])[0]
+        top_assister = (legends.get("assists") or [None])[0]
+        first_match = all_matches[0] if all_matches else None
+        stats = {
+            "matches": len(all_matches), "wins": wins, "draws": draws, "losses": losses,
+            "top_scorer": top_scorer, "top_assister": top_assister,
+            "biggest_win": biggest_win, "biggest_loss": biggest_loss,
+            "first_match": first_match,
+        }
+        return {"seasons": sorted(seasons, reverse=True), "by_season": season_rows,
+                "by_competition": competition_rows, "matches": all_matches,
+                "stats": stats, "top11": (legends.get("appearances") or [])[:11]}
+
     @staticmethod
     def _player_search_fold(value):
         """Normalize names for case- and accent-insensitive player lookup."""
