@@ -1410,7 +1410,7 @@ class Game:
         entry.setdefault("teams", {})
         for key in ("leg1_match", "leg2_match", "winner", "loser"):
             entry.setdefault(key, None)
-        if not entry.get("teams"):
+        if not entry.get("teams") and phase2.get("initialized"):
             rows = phase1_table if phase1_table is not None else self.league_phase1_table("fc1")
             if len(rows) >= 8:
                 entry["teams"] = {"sixth": rows[5]["team"], "seventh": rows[6]["team"]}
