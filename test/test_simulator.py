@@ -639,9 +639,11 @@ class SimulatorTests(unittest.TestCase):
             def deterministic_poisson(_lam, _rng):
                 return next(poisson_values, 1)
 
-            with patch.object(sl_game_module.eng, "poisson", side_effect=deterministic_poisson), \\
-                 patch.object(sl_game_module.eng, "_shootout", return_value={"home": 5, "away": 4}), \\
-                 patch.object(game, "_complete_slot", return_value={"finished": False}):
+            with (
+                patch.object(sl_game_module.eng, "poisson", side_effect=deterministic_poisson),
+                patch.object(sl_game_module.eng, "_shootout", return_value={"home": 5, "away": 4}),
+                patch.object(game, "_complete_slot", return_value={"finished": False}),
+            ):
                 game.advance_slot(persist=False)
 
             return_match = game.s["matches"][-1]
