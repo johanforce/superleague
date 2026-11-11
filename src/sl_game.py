@@ -6246,7 +6246,7 @@ class Game:
         """Build club-only season finishes, match history and all-time statistics."""
         if not team:
             return {"seasons": [], "by_season": [], "by_competition": [], "matches": [],
-                    "stats": {}, "top11": []}
+                    "stats": {}, "top11": [], "current_players": [], "former_players": []}
 
         all_matches = [dict(match) for match in self._career_match_records()
                        if team in (match.get("home"), match.get("away"))]
