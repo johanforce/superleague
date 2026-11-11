@@ -2442,11 +2442,20 @@ class SuperLeagueApp:
         self.club_history_match_lookup = {}
         self.club_history_match_tree.bind("<Double-1>", self._open_club_history_match)
         self.club_history_match_tree.bind("<Return>", self._open_club_history_match)
-        top11_page = self.club_history_tabs.add("top11", "Top 11 ra sân")
-        self.club_history_top11_tree = self._tree(top11_page, [
+        top11_page = self.club_history_tabs.add("top11", "Cầu thủ CLB")
+        self.club_history_player_tabs = Segmented(
+            top11_page, hint="Tách danh sách cầu thủ hiện đang thuộc CLB và toàn bộ cựu cầu thủ từng thi đấu."
+        )
+        self.club_history_player_tabs.pack(fill="both", expand=True)
+        current_players_page = self.club_history_player_tabs.add("current", "Hiện tại")
+        former_players_page = self.club_history_player_tabs.add("former", "Lịch sử")
+        player_columns = [
             ("rank", "#", 42), ("player", "Cầu thủ", 210), ("position", "VT", 55),
             ("apps", "Số trận", 85), ("goals", "Bàn", 70), ("assists", "Kiến tạo", 85),
-        ], height=12)
+            ("minutes", "Phút", 85),
+        ]
+        self.club_history_current_players_tree = self._tree(current_players_page, player_columns, height=16)
+        self.club_history_former_players_tree = self._tree(former_players_page, player_columns, height=16)
         self._club_history_data = None
 
     def _refresh_club_history_matches(self):
@@ -5114,12 +5123,20 @@ class SuperLeagueApp:
         if self.club_history_season_var.get() not in seasons:
             self.club_history_season_var.set(seasons[0] if seasons else "")
         self._refresh_club_history_matches()
-        top11 = data.get("top11", [])
-        self._set_tree(self.club_history_top11_tree, top11, lambda i, row: (
+        current_players = data.get("current_players", [])
+        former_players = data.get("former_players", [])
+        player_mapper = lambda i, row: (
             i + 1, row.get("player", "—"), row.get("position", "—"),
-            row.get("apps", 0), row.get("goals", 0), row.get("assists", 0)))
-        if not top11:
-            self.club_history_top11_tree.insert("", "end", values=("—", "Chưa có dữ liệu ra sân", "", "", "", ""))
+            row.get("apps", 0), row.get("goals", 0), row.get("assists", 0),
+            row.get("minutes", 0))
+        self._set_tree(self.club_history_current_players_tree, current_players, player_mapper)
+        self._set_tree(self.club_history_former_players_tree, former_players, player_mapper)
+        if not current_players:
+            self.club_history_current_players_tree.insert(
+                "", "end", values=("—", "Chưa có cầu thủ hiện tại", "", "", "", "", ""))
+        if not former_players:
+            self.club_history_former_players_tree.insert(
+                "", "end", values=("—", "Chưa có dữ liệu cựu cầu thủ", "", "", "", "", ""))
 
     def refresh_development(self):
         rows=self.game.s.get("last_development",[])
