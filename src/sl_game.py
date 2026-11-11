@@ -1597,7 +1597,9 @@ class Game:
             "matches": [], "slots": [], "slot_cursor": 0, "next_match_id": 1,
             "league_fixtures": {}, "league_phase2": {},
             "cup": {"bracket": {}, "winner": None, "runner_up": None},
-            "c1": {}, "season_stats": {}, "history": [], "last_development": [],
+            "c1": {}, "season_stats": {}, "club_season_player_stats": {},
+            "club_season_player_stats_version": 1, "club_season_player_match_ids": [],
+            "history": [], "last_development": [],
             "competition_awards": {}, "season_awards": None,
             "last_promotions": {"promoted": [], "relegated": []}, "last_news": [], "last_match_date": {}
         }
@@ -1638,6 +1640,18 @@ class Game:
         # Award registries are additive fields so older career saves remain compatible.
         s.setdefault("competition_awards", {})
         s.setdefault("season_awards", None)
+        if int(s.get("club_season_player_stats_version", 0) or 0) < 1:
+            # Rebuild the active season from its still-detailed match logs exactly once.
+            s["club_season_player_stats"] = {}
+            s["club_season_player_match_ids"] = []
+            if not s.get("season_done"):
+                for old_match in s.get("matches", []) or []:
+                    if old_match.get("played", True):
+                        self._update_club_season_player_stats(old_match)
+            s["club_season_player_stats_version"] = 1
+        else:
+            s.setdefault("club_season_player_stats", {})
+            s.setdefault("club_season_player_match_ids", [])
         for stat in (s.get("season_stats", {}) or {}).values():
             if isinstance(stat, dict):
                 stat.setdefault("injury_days", 0)
@@ -2125,6 +2139,9 @@ class Game:
         s["season_tiers"] = dict(s["team_tiers"])
         s["season_seed_order"] = list(s["seed_order"])
         s["season_stats"] = {pid: self._empty_stat() for ids in s["rosters"].values() for pid in ids}
+        s["club_season_player_stats"] = {}
+        s["club_season_player_stats_version"] = 1
+        s["club_season_player_match_ids"] = []
         for team in s["rosters"]:
             for pid in s["rosters"][team]:
                 s["dyn"].setdefault(pid, {"form": 0.0, "fit": 100.0})
@@ -2297,6 +2314,7 @@ class Game:
             self._update_enhanced_match_state(match)
         else:
             self._update_player_match_stats(match)
+        self._update_club_season_player_stats(match)
         s["matches"].append(match)
         s["last_match_date"][home] = str(match_date)
         s["last_match_date"][away] = str(match_date)
@@ -3086,6 +3104,152 @@ class Game:
             self.save()
         return {"finished": False, "slot": slot, "matches": slot_matches,
                 "message": self.s["last_news"][0] if self.s.get("last_news") else "Đã hoàn tất slot."}
+
+    def _update_club_season_player_stats(self, match):
+        """Accumulate season totals against the club a player represented in this match."""
+        s = self.s
+        if not isinstance(match, dict):
+            return
+        season = int(match.get("season", s.get("season", 0)) or s.get("season", 0))
+        if season != int(s.get("season", season) or season):
+            return
+        match_id = match.get("id")
+        identity = (f"{season}:{match_id}" if match_id is not None else
+                    f"{season}:{match.get('date')}:{match.get('comp')}:{match.get('home')}:{match.get('away')}")
+        seen = s.setdefault("club_season_player_match_ids", [])
+        if identity in seen:
+            return
+
+        all_stats = s.setdefault("club_season_player_stats", {})
+        players = s.get("players", {}) or {}
+        home, away = match.get("home"), match.get("away")
+        sides = (("h", home), ("a", away))
+        side_ids = {}
+        side_minutes = {}
+        side_details = {}
+        side_sub_minutes = {}
+        player_clubs = {}
+
+        for side, club in sides:
+            minute_key = "minutes_" + side
+            minutes = {str(pid): value for pid, value in (match.get(minute_key) or {}).items()}
+            details = {str(pid): value for pid, value in
+                       ((match.get("player_stats") or {}).get(side, {}) or {}).items()}
+            used = {str(pid) for pid in (match.get("xi_" + side, []) or []) if pid}
+            sub_minutes = {}
+            for item in match.get("subs_" + side, []) or []:
+                if isinstance(item, dict):
+                    incoming = item.get("in") or item.get("player_in") or item.get("player_id")
+                    minute = item.get("minute", item.get("m", 0))
+                elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                    minute, incoming = item[0], item[2]
+                else:
+                    continue
+                if incoming:
+                    pid = str(incoming)
+                    used.add(pid)
+                    try:
+                        sub_minutes[pid] = max(1, 90 - int(minute or 0))
+                    except (TypeError, ValueError):
+                        sub_minutes[pid] = 1
+            for pid, value in minutes.items():
+                try:
+                    if float(value or 0) > 0:
+                        used.add(pid)
+                except (TypeError, ValueError):
+                    pass
+            for pid, detail in details.items():
+                try:
+                    if float((detail or {}).get("min", (detail or {}).get("minutes", 0)) or 0) > 0:
+                        used.add(pid)
+                except (TypeError, ValueError):
+                    pass
+            side_ids[side] = used
+            side_minutes[side] = minutes
+            side_details[side] = details
+            side_sub_minutes[side] = sub_minutes
+            for pid in used:
+                player_clubs[pid] = (side, club)
+
+        goals_by_side = {side: Counter() for side, _club in sides}
+        assists_by_side = {side: Counter() for side, _club in sides}
+        event_names = {}
+        for event in match.get("goals", []) or []:
+            if not isinstance(event, dict):
+                continue
+            event_side = event.get("side")
+            if event_side in ("home", "h"):
+                side = "h"
+            elif event_side in ("away", "a"):
+                side = "a"
+            else:
+                event_team = event.get("team")
+                side = next((key for key, club in sides if club and club == event_team), None)
+            scorer_id = event.get("scorer_id") or event.get("player_id")
+            assist_id = event.get("assist_id")
+            scorer_name = event.get("scorer") or event.get("player")
+            assist_name = event.get("assist") or event.get("assist_name")
+            if scorer_id:
+                scorer_id = str(scorer_id)
+                if side is None:
+                    side = player_clubs.get(scorer_id, (None, None))[0]
+                if side in goals_by_side:
+                    goals_by_side[side][scorer_id] += 1
+                    event_names.setdefault(scorer_id, scorer_name)
+            if assist_id:
+                assist_id = str(assist_id)
+                assist_side = side or player_clubs.get(assist_id, (None, None))[0]
+                if assist_side in assists_by_side:
+                    assists_by_side[assist_side][assist_id] += 1
+                    event_names.setdefault(assist_id, assist_name)
+
+        for side, club in sides:
+            if not club:
+                continue
+            detail_map = side_details[side]
+            minutes_map = side_minutes[side]
+            sub_minutes = side_sub_minutes[side]
+            ids = set(side_ids[side]) | set(goals_by_side[side]) | set(assists_by_side[side])
+            club_rows = all_stats.setdefault(str(club), {})
+            for raw_pid in ids:
+                pid = str(raw_pid)
+                detail = detail_map.get(pid, {}) or {}
+                player = players.get(pid, players.get(raw_pid, {})) or {}
+                try:
+                    played_minutes = int(float(minutes_map.get(pid, detail.get("min", detail.get("minutes", 0))) or 0))
+                except (TypeError, ValueError):
+                    played_minutes = 0
+                if played_minutes <= 0 and pid in sub_minutes:
+                    played_minutes = sub_minutes[pid]
+                if played_minutes <= 0 and pid in set(str(x) for x in (match.get("xi_" + side, []) or [])):
+                    played_minutes = 90
+                appeared = bool(pid in side_ids[side] or goals_by_side[side].get(pid) or assists_by_side[side].get(pid))
+                try:
+                    goals = int(detail["g"]) if "g" in detail else int(goals_by_side[side].get(pid, 0))
+                except (TypeError, ValueError):
+                    goals = int(goals_by_side[side].get(pid, 0))
+                try:
+                    assists = int(detail["a"]) if "a" in detail else int(assists_by_side[side].get(pid, 0))
+                except (TypeError, ValueError):
+                    assists = int(assists_by_side[side].get(pid, 0))
+                row = club_rows.setdefault(pid, {
+                    "player_id": pid,
+                    "player": player.get("common_name") or event_names.get(pid) or pid,
+                    "team": str(club),
+                    "position": player.get("position") or "",
+                    "apps": 0, "goals": 0, "assists": 0, "minutes": 0,
+                })
+                if appeared:
+                    row["apps"] += 1
+                row["goals"] += max(0, goals)
+                row["assists"] += max(0, assists)
+                row["minutes"] += max(0, played_minutes)
+                if not row.get("player") or row["player"] == pid:
+                    row["player"] = player.get("common_name") or event_names.get(pid) or pid
+                if not row.get("position"):
+                    row["position"] = player.get("position") or ""
+
+        seen.append(identity)
 
     def _update_player_match_stats(self, match):
         s = self.s
@@ -5206,6 +5370,13 @@ class Game:
                    "champion": c1_winner, "runner_up": s["c1"].get("runner_up")},
             "qualification_table": points_table, "top_scorers": scorer_rows[:20], "top_assists": assist_rows[:20],
             "career_player_stats": [dict(row) for row in scorer_rows],
+            "club_player_stats": [
+                dict(row)
+                for club_rows in (s.get("club_season_player_stats", {}) or {}).values()
+                for row in club_rows.values()
+                if int(row.get("apps", 0) or 0) > 0 or int(row.get("goals", 0) or 0) > 0
+                or int(row.get("assists", 0) or 0) > 0
+            ],
             "competition_awards": {key: dict(value) for key, value in s.get("competition_awards", {}).items()},
             "season_awards": season_awards,
             "individual_awards": self._build_individual_awards(
