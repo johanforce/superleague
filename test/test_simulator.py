@@ -564,6 +564,38 @@ class SimulatorTests(unittest.TestCase):
             archived_scorer = next(row for row in archived_legends["goals"] if row["player_id"] == scorer_id)
             self.assertEqual((archived_scorer["apps"], archived_scorer["goals"]), (1, 2))
 
+    def test_legacy_archive_goal_events_restore_the_original_club(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=20261112)
+            original_club, current_club = list(game.s["rosters"])[:2]
+            player_id = game.s["rosters"][original_club][0]
+            player_name = game.s["players"][player_id]["common_name"]
+            game.s["rosters"][original_club].remove(player_id)
+            game.s["rosters"][current_club].append(player_id)
+            game.s["players"][player_id]["club"] = current_club
+            game.s["history"] = [{
+                "season": int(game.s["season"]) - 1,
+                "career_player_stats": [{
+                    "player_id": player_id, "player": player_name, "team": current_club,
+                    "position": game.s["players"][player_id]["position"],
+                    "apps": 5, "goals": 4, "assists": 1, "minutes": 450,
+                }],
+                "matches": [{
+                    "id": 1, "season": int(game.s["season"]) - 1, "played": True,
+                    "date": "2025-08-01", "comp": "Premier League",
+                    "home": original_club, "away": current_club, "hg": 1, "ag": 0,
+                    "goals": [{"team": original_club, "scorer_id": player_id, "scorer": player_name}],
+                }],
+            }]
+
+            former_club_rows = game.career_player_legends(team=original_club, limit=100)
+            recovered = next(row for row in former_club_rows["goals"] if row["player_id"] == player_id)
+            self.assertEqual((recovered["team"], recovered["goals"]), (original_club, 1))
+            current_club_rows = game.career_player_legends(team=current_club, limit=100)
+            retained = next(row for row in current_club_rows["goals"] if row["player_id"] == player_id)
+            self.assertEqual((retained["apps"], retained["goals"], retained["assists"]),
+                             (5, 1, 1))
+
     def test_full_season_and_roster_invariants(self):
         with tempfile.TemporaryDirectory() as tmp:
             game = Game(data_dir=tmp, fresh=True)
