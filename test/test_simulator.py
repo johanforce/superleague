@@ -514,11 +514,11 @@ class SimulatorTests(unittest.TestCase):
             # local award_settings.json (which may intentionally customize apps).
             game.award_settings = dict(AWARD_SETTINGS_DEFAULTS)
             record = game.simulate_full_season(persist_each_slot=False)
-            self.assertEqual(record["match_count"], 246)
-            self.assertEqual(len(game.s["matches"]), 246)
+            self.assertEqual(record["match_count"], 248)
+            self.assertEqual(len(game.s["matches"]), 248)
             comps = Counter(m["comp"] for m in game.s["matches"])
             self.assertEqual(comps["Premier League"], 80)  # 56 phase 1 + 12 Champion + 12 Challenge
-            self.assertEqual(comps["Football Championship 1"], 58)  # 56 + two promotion play-offs
+            self.assertEqual(comps["Football Championship 1"], 60)  # 56 + two promotion + two relegation play-offs
             self.assertEqual(comps["Football Championship 2"], 58)  # 56 + two promotion play-offs
             self.assertEqual(comps["Cup"], 23)
             self.assertEqual(comps["C1 Play-in"] + comps["C1"], 27)
@@ -621,7 +621,7 @@ class SimulatorTests(unittest.TestCase):
                                 for row in migrated.get("ballon_podium", [])))
             self.assertTrue(all(row.get("award_eligible") and int(row.get("apps", 0)) > 20
                                 for row in migrated.get("best_xi_442", [])))
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             self.assertTrue(game.s["calendar_validation"]["valid"])
             self.assertEqual(len(record["promoted"]), 4)
             self.assertEqual(len(record["relegated"]), 4)
@@ -649,7 +649,7 @@ class SimulatorTests(unittest.TestCase):
             game.next_season()
             self.assertEqual(Counter(game.s["team_tiers"].values()), Counter({"premier":8,"fc1":8,"fc2":8}))
             self.assertEqual(len(game.s["league_fixtures"]["premier"]), 14)
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             self.assertEqual(game.s["season"], 2027)
 
     def test_league_phase2_format_and_promotion_paths(self):
@@ -714,10 +714,10 @@ class SimulatorTests(unittest.TestCase):
             upgraded = Game(data_dir=tmp, seed=777)
             self.assertEqual(upgraded.s["matches"], json.loads(json.dumps(previous_matches)))
             phase2_slots = [slot for slot in upgraded.s["slots"] if slot.get("kind") == "league_phase2"]
-            self.assertEqual(len(phase2_slots), 10)
-            self.assertEqual(len(upgraded.s["slots"]), 66)
+            self.assertEqual(len(phase2_slots), 12)
+            self.assertEqual(len(upgraded.s["slots"]), 68)
             self.assertTrue(upgraded.s["calendar_validation"]["valid"])
-            self.assertEqual(upgraded.s["calendar_validation"]["slots"], 66)
+            self.assertEqual(upgraded.s["calendar_validation"]["slots"], 68)
             latest_played = max(match["date"] for match in upgraded.s["matches"])
             self.assertGreaterEqual(
                 (date.fromisoformat(upgraded.next_slot()["date"]) - date.fromisoformat(latest_played)).days, 3
@@ -744,7 +744,7 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(game.s["season"], 2027)
             self.assertEqual(date.fromisoformat(game.s["season_start_date"]).year, 2027)
             expected_tier_weekdays = {"fc2": 4, "premier": 5, "fc1": 6}
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             dates = [date.fromisoformat(slot["date"]) for slot in game.s["slots"]]
             self.assertEqual(len(dates), len(set(dates)))
             for slot in game.s["slots"]:
@@ -758,7 +758,7 @@ class SimulatorTests(unittest.TestCase):
                 elif slot["kind"].startswith("c1_"):
                     self.assertEqual(weekday, 2, slot)  # Wednesday
             self.assertTrue(game.s["calendar_validation"]["valid"])
-            self.assertEqual(game.s["calendar_schedule_version"], 4)
+            self.assertEqual(game.s["calendar_schedule_version"], 5)
             self.assertEqual(game.s["calendar_validation"]["fc2_weekday"], "fri")
             self.assertEqual(game.s["calendar_validation"]["league_weekday"], "sat")
             self.assertEqual(game.s["calendar_validation"]["fc1_weekday"], "sun")
@@ -788,7 +788,7 @@ class SimulatorTests(unittest.TestCase):
             self.assertTrue(resumed_played_slot["played"])
             self.assertEqual(resumed_played_slot["date"], played_slot_date)
             self.assertEqual(resumed.s["matches"], prior_matches)
-            self.assertEqual(resumed.s["calendar_schedule_version"], 4)
+            self.assertEqual(resumed.s["calendar_schedule_version"], 5)
             self.assertTrue(resumed.s["calendar_validation"]["valid"])
 
     def test_c1_playin_cup_final_and_c1_final_ordering(self):
@@ -848,7 +848,7 @@ class SimulatorTests(unittest.TestCase):
 
             migrated = Game(data_dir=tmp, seed=86420)
             slots = {slot["id"]: slot for slot in migrated.s["slots"]}
-            self.assertEqual(migrated.s["calendar_schedule_version"], 4)
+            self.assertEqual(migrated.s["calendar_schedule_version"], 5)
             self.assertEqual(date.fromisoformat(slots["C11"]["date"]), anchor + timedelta(weeks=1, days=-3))
             self.assertEqual(date.fromisoformat(slots["C12"]["date"]), anchor + timedelta(weeks=3, days=-3))
             self.assertEqual(date.fromisoformat(slots["C13"]["date"]), anchor + timedelta(weeks=6, days=-3))
@@ -876,7 +876,7 @@ class SimulatorTests(unittest.TestCase):
                 (date.fromisoformat(next_slot["date"]) - date.fromisoformat(played_date)).days, 3
             )
             self.assertTrue(migrated.s["calendar_validation"]["valid"])
-            self.assertEqual(migrated.s["calendar_schedule_version"], 4)
+            self.assertEqual(migrated.s["calendar_schedule_version"], 5)
 
     def test_reset_simulation_starts_clean_career_without_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -889,7 +889,7 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(game.s["slot_cursor"], 0)
             self.assertFalse(game.s["season_done"])
             self.assertTrue(game.save_path.exists())
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             self.assertFalse((Path(tmp) / "backups").exists())
             self.assertEqual(list((Path(tmp) / "season").glob("*.json")), [])
 
