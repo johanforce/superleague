@@ -6162,7 +6162,7 @@ class Game:
         for season_record in self.s.get("history", []):
             club_snapshot = season_record.get("club_player_stats")
             snapshot = season_record.get("career_player_stats")
-            if isinstance(club_snapshot, list):
+            if isinstance(club_snapshot, list) and club_snapshot:
                 # New archives retain one row per player and the club represented in that season.
                 for row in club_snapshot:
                     add_totals(row.get("player_id"), row.get("player"), row.get("team"),
