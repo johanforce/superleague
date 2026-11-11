@@ -1431,6 +1431,23 @@ class Game:
                     add(f"promotion:{tier}:{stage_key}", TIER_LABELS[tier], phase_label, home, away,
                         force_winner=True, stage=f"promotion_{tier}_{stage_key}",
                         bucket="promotion_playoff", tier=tier, stage_key=stage_key)
+
+        # FC1 relegation play-off: 7th hosts leg one, 6th hosts leg two.
+        if phase2_tier == "fc1" and round_index in (3, 5):
+            entry = self._fc1_relegation_playoff_entry()
+            teams = entry.get("teams", {})
+            sixth, seventh = teams.get("sixth"), teams.get("seventh")
+            if round_index == 3 and sixth and seventh:
+                add("relegation:fc1:leg1", TIER_LABELS["fc1"],
+                    "Play-off trụ hạng · Lượt đi", seventh, sixth,
+                    stage="relegation_fc1_leg1", bucket="fc1_relegation", leg_key="leg1")
+            elif round_index == 5 and sixth and seventh and entry.get("leg1_match"):
+                first = self.match_by_id(entry["leg1_match"])
+                aggregate_before = (int(first.get("ag", 0) or 0), int(first.get("hg", 0) or 0))
+                add("relegation:fc1:leg2", TIER_LABELS["fc1"],
+                    "Play-off trụ hạng · Lượt về", sixth, seventh,
+                    force_winner=True, aggregate_before=aggregate_before,
+                    stage="relegation_fc1_leg2", bucket="fc1_relegation", leg_key="leg2")
         return specs
 
     def future_phase2_fixtures(self, slot):
@@ -5216,7 +5233,10 @@ class Game:
         if not up_f1_winner or not up_f2_winner:
             raise RuntimeError("Thiếu kết quả play-off lên hạng của FC1 hoặc FC2.")
         up_f1 = [f1[0]["team"], up_f1_winner]
-        down_f1 = [row["team"] for row in f1[-2:]]
+        relegation_tie = self.relegation_playoff_summary()
+        if not relegation_tie.get("winner") or not relegation_tie.get("loser"):
+            raise RuntimeError("Thiếu kết quả play-off trụ hạng FC1 (hai lượt trận).")
+        down_f1 = [f1[-1]["team"], relegation_tie["loser"]]
         up_f2 = [f2[0]["team"], up_f2_winner]
         for team in down_pl: self.s["team_tiers"][team] = "fc1"
         for team in up_f1: self.s["team_tiers"][team] = "premier"
@@ -5227,7 +5247,9 @@ class Game:
                     [{"team": team, "from": "fc2", "to": "fc1",
                       "path": "Vô địch GĐ1" if team == f2[0]["team"] else "Thắng play-off"} for team in up_f2])
         relegated = ([{"team": team, "from": "premier", "to": "fc1", "path": "Challenge · Top 2 cuối"} for team in down_pl] +
-                     [{"team": team, "from": "fc1", "to": "fc2", "path": "BXH GĐ1 · Hạng 7–8"} for team in down_f1])
+                     [{"team": f1[-1]["team"], "from": "fc1", "to": "fc2", "path": "BXH GĐ1 · Hạng 8"},
+                      {"team": relegation_tie["loser"], "from": "fc1", "to": "fc2",
+                       "path": "Thua play-off trụ hạng · Hạng 6–7"}])
         counts = Counter(self.s["team_tiers"].values())
         if counts != Counter({"premier": 8, "fc1": 8, "fc2": 8}):
             raise RuntimeError(f"Lỗi lên/xuống hạng: phân bổ sau mùa không còn 8-8-8 ({dict(counts)}).")
