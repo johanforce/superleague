@@ -59,6 +59,25 @@ MONO_FONT = "Courier"
 SPECTATOR_MODE = True
 
 
+SQUAD_ROLE_LABELS = {
+    "STAR": "Ngôi sao",
+    "FIRST_TEAM": "Đội hình chính",
+    "ROTATION": "Xoay tua",
+    "BACKUP": "Dự bị",
+    "PROSPECT": "Tài năng trẻ",
+}
+
+
+def format_squad_role(role):
+    """Translate the internal squad-role code for user-facing labels only."""
+    if role in (None, ""):
+        return "—"
+    value = str(role).strip()
+    if not value:
+        return "—"
+    return SQUAD_ROLE_LABELS.get(value.upper(), value.replace("_", " ").capitalize())
+
+
 def init_fonts(root):
     """Chọn font có sẵn trên máy (hỗ trợ tiếng Việt) cho từng hệ điều hành."""
     global UI_FONT, MONO_FONT
@@ -1852,7 +1871,7 @@ class SuperLeagueApp:
             ("Giá trị thị trường", f"{bio['market_value']:.2f} M€"),
             ("Lương / năm", f"{bio['wage']:.2f} M€"),
             ("Hợp đồng còn lại", f"{bio['contract_years']} năm" if bio["contract_years"] is not None else "Tự do"),
-            ("Vai trò", bio["role"] or "—"),
+            ("Vai trò", format_squad_role(bio["role"])) ,
             ("Phong độ", f"{int(round(float(bio['form']))):+d}" if bio["form"] is not None else "—"),
             ("Thể lực", f"{float(bio['fitness']):.0f}%" if bio["fitness"] is not None else "—"),
         ]
@@ -4235,7 +4254,7 @@ class SuperLeagueApp:
             contract_rows.append({
                 "player_id": pid, "player": player.get("common_name", pid), "pos": player.get("position", "—"),
                 "age": round(float(meta.get("age", 0)), 1), "ovr": player.get("overall_rating", "—"),
-                "role": contract.get("squad_role", "—"),
+                "role": format_squad_role(contract.get("squad_role")),
                 "wage": f"{float(contract.get('wage_per_year', player.get('wage', 0))):.2f}",
                 "mv": f"{float(player.get('market_value', 0)):.2f}",
                 "years": f"{int(contract.get('years_remaining', 0))} năm" if contract else "—",
