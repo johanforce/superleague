@@ -1871,7 +1871,7 @@ class SuperLeagueApp:
             ("Giá trị thị trường", f"{bio['market_value']:.2f} M€"),
             ("Lương / năm", f"{bio['wage']:.2f} M€"),
             ("Hợp đồng còn lại", f"{bio['contract_years']} năm" if bio["contract_years"] is not None else "Tự do"),
-            ("Vai trò", format_squad_role(bio["role"])) ,
+            ("Vai trò", format_squad_role(bio["role"])),
             ("Phong độ", f"{int(round(float(bio['form']))):+d}" if bio["form"] is not None else "—"),
             ("Thể lực", f"{float(bio['fitness']):.0f}%" if bio["fitness"] is not None else "—"),
         ]
