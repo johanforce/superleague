@@ -2319,9 +2319,12 @@ class SuperLeagueApp:
         contract_notice.pack(fill="x", pady=(0, 8))
         self.club_contract_tree = self._tree(contracts_page, [
             ("player", "Cầu thủ", 190), ("pos", "VT", 55), ("age", "Tuổi", 55),
-            ("ovr", "OVR", 55), ("role", "Vai trò", 100), ("wage", "Lương/năm", 95),
+            ("ovr", "OVR", 55), ("role", "Vai trò", 120), ("wage", "Lương/năm", 95),
             ("mv", "Giá trị (M€)", 100), ("years", "Còn lại", 75), ("status", "Hợp đồng", 100)
         ], height=18)
+        # Giữ cột Vai trò luôn có độ rộng đủ đọc; không để Treeview co cột này
+        # xuống mức tối thiểu khi cửa sổ hẹp.
+        self.club_contract_tree.column("role", width=120, minwidth=115, stretch=False, anchor="center")
         self.club_stadium_text = self._scrolled_text(stadium_page, mono=False, bg=SURFACE_2, padx=14, pady=12)
         self.club_report_text = self._scrolled_text(reports_page, mono=False, bg=SURFACE_2, padx=14, pady=12)
         self.club_inbox_text = self._scrolled_text(inbox_page, mono=False, bg=SURFACE_2, padx=14, pady=12)
