@@ -26,10 +26,27 @@ from sl_match.news import (
     reference_date_from_state,
     unique_headlines,
 )
-from sl_gui import BG, SIDEBAR, SURFACE, SURFACE_2, RAISED, SELECT, TEXT, MUTED, DIM, _UpcomingMatchGameProxy
+from sl_gui import (BG, SIDEBAR, SURFACE, SURFACE_2, RAISED, SELECT, TEXT, MUTED, DIM,
+                     _UpcomingMatchGameProxy, format_squad_role)
 from sl_match.report_ui import EVENT_STYLES
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class ContractRoleDisplayTests(unittest.TestCase):
+    def test_contract_role_codes_have_friendly_vietnamese_labels(self):
+        expected = {
+            "STAR": "Ngôi sao",
+            "FIRST_TEAM": "Đội hình chính",
+            "ROTATION": "Xoay tua",
+            "BACKUP": "Dự bị",
+            "PROSPECT": "Tài năng trẻ",
+        }
+        for code, label in expected.items():
+            with self.subTest(code=code):
+                self.assertEqual(format_squad_role(code), label)
+        self.assertEqual(format_squad_role(None), "—")
+        self.assertEqual(format_squad_role("FUTURE_ROLE"), "Future role")
 
 
 class LiveMatchDetailTests(unittest.TestCase):
