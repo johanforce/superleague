@@ -2392,8 +2392,9 @@ class SuperLeagueApp:
         tk.Label(status_body, textvariable=self.club_h2h_var, font=F(9), bg=SURFACE, fg=MUTED, wraplength=980, justify="left").pack(anchor="w", pady=(3, 0))
 
         self.squad_tree = self._tree(first, [("pos","VT",55),("name","Cầu thủ",250),("age","Tuổi",60),("ovr","OVR",60),
-            ("pot","Potential",90),("wage","Lương/năm",90),("contract","HĐ còn",70),("market","Giá trị M€",90),
+            ("role","Vai trò",120),("pot","Potential",90),("wage","Lương/năm",90),("contract","HĐ còn",70),("market","Giá trị M€",90),
             ("form","Phong độ",90),("fit","Thể lực",90),("apps","Trận",60),("goals","Bàn",55),("assists","KT",55),("rating","ĐG TB",75)])
+        self.squad_tree.column("role", width=120, minwidth=115, stretch=False, anchor="center")
         self._caption(academy, "Học viện", "Chỉ hiển thị cầu thủ 16–20 tuổi")
         self.academy_tree = self._tree(academy, [("pos","VT",55),("name","Cầu thủ học viện",205),("age","Tuổi",55),("ovr","OVR",55),("pot","Potential",80),("talent","Tiềm năng",100)])
         # Mọi bảng cầu thủ chỉ mở hồ sơ để xem; không tạo bất kỳ thao tác quản lý CLB nào.
@@ -4140,6 +4141,7 @@ class SuperLeagueApp:
             contract = self.game.s.get("contracts", {}).get(pid, {})
             player = self.game.s.get("players", {}).get(pid, {})
             return (row["position"], name, round(row["age"] or 0, 1), row["ovr"],
+                    format_squad_role(contract.get("squad_role")),
                     f"{potential:.1f}" if potential is not None else "—",
                     f"{float(player.get('wage', 0)):.2f}",
                     f"{int(contract.get('years_remaining', 0))} năm" if contract else "—",
