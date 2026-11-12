@@ -455,7 +455,7 @@ class Game:
                 "fc2": {"positions": [46, 24, 20, 16, 12, 8, 4, 2], "promotion_playoff_winner": 34},
                 "cup": {"winner": 40, "final": 30, "sf": 22, "qf": 14, "r16": 8, "r1": 3},
                 "history_weight": 0.0},
-            "calendar": {"start_date": "2026-08-01", "league_day": "sat", "fc2_day": "fri", "fc1_day": "sun", "cup_day": "tue", "midweek_day": "wed", "min_rest_days": 3, "league_week_offsets": [0,1,2,3,5,6,7,8,10,11,12,13,15,17], "fc2_week_offsets": [0,2,4,5,7,8,9,10,12,13,14,15,17,19], "cup_week_offsets": [5,10,15,17,33], "c1_week_offsets": [1,3,6,36,37,38,39,40,41], "league_phase2_week_offsets": [30,31,32,33,34,35], "cup_final_after_premier_round": 3},
+            "calendar": {"start_date": "2026-08-01", "league_day": "sat", "fc2_day": "fri", "fc1_day": "sun", "cup_day": "tue", "midweek_day": "wed", "min_rest_days": 3, "league_week_offsets": [0,1,2,3,5,6,7,8,10,11,12,13,15,17], "fc2_week_offsets": [0,2,4,5,7,8,9,10,12,13,14,15,17,19], "cup_week_offsets": [5,10,15,17,33], "c1_week_offsets": [1,3,6,11,16,20,37,39,41], "league_phase2_week_offsets": [30,31,32,33,34,35], "cup_final_after_premier_round": 3},
             "engine": {"base_xg":1.22,"gap_scale":28.0,"gap_cap":.72,"home_factor":1.055,"away_factor":.945,
                        "xg_min":.25,"xg_max":2.65,"et_xg_factor":.23,"shots_per_xg":8.2,"sot_ratio_min":.30,
                        "sot_ratio_max":.43,"possession_gap_weight":1.35,"possession_noise":2.6,"assist_probability":.76,
@@ -891,6 +891,8 @@ class Game:
                         "phase1_table": []},
             "promotion_playoffs": {tier: {"teams": {}, "semi_match": None, "final_match": None, "winner": None}
                                    for tier in ("fc1", "fc2")},
+            "relegation_playoff": {"teams": {}, "leg1_match": None, "leg2_match": None,
+                                   "winner": None, "loser": None},
         }
 
     def _shift_pending_calendar_after_played_matches(self):
@@ -965,7 +967,7 @@ class Game:
         league_offsets = calendar_cfg.get("league_week_offsets", [0,1,2,3,5,6,7,8,10,11,12,13,15,17])
         fc2_offsets = calendar_cfg.get("fc2_week_offsets", [0,2,4,5,7,8,9,10,12,13,14,15,17,19])
         cup_offsets = calendar_cfg.get("cup_week_offsets", [5,10,15,17,33])
-        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,36,37,38,39,40,41])
+        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,11,16,20,37,39,41])
         phase2_offsets = calendar_cfg.get("league_phase2_week_offsets", [30,31,32,33,34,35])
         tier_weekdays = {"fc2": fc2_wd, "premier": premier_wd, "fc1": fc1_wd}
         matches_by_id = {int(m.get("id", -1)): m for m in self.s.get("matches", [])}
@@ -1033,6 +1035,41 @@ class Game:
         validate_calendar_slots(self.s["slots"], min_rest)
         self._update_calendar_validation_metadata()
 
+    def _migrate_v4_calendar_to_v5(self):
+        """Add FC1 survival legs and interleave C1 rounds without rewriting played results."""
+        if self.s.get("season_done"):
+            self.s["calendar_schedule_version"] = 5
+            return
+        cfg = self.config["calendar"]
+        anchor = _safe_date(self.s.get("season_start_date") or cfg.get("start_date"))
+        c1_wd = _weekday_number(cfg.get("midweek_day", "wed"), "midweek_day")
+        fc1_wd = _weekday_number(cfg.get("fc1_day", "sun"), "fc1_day")
+        c1_offsets = cfg.get("c1_week_offsets", [1, 3, 6, 11, 16, 20, 37, 39, 41])
+        slots = list(self.s.get("slots", []))
+        by_id = {str(slot.get("id")): slot for slot in slots}
+        for index, week in enumerate(c1_offsets, 1):
+            slot = by_id.get(f"C1{index}")
+            if slot and not slot.get("played") and not slot.get("fixture_result_ids"):
+                slot["date"] = _date_in_week(anchor, week, c1_wd).isoformat()
+        phase2_offsets = cfg.get("league_phase2_week_offsets", [30, 31, 32, 33, 34, 35])
+        for round_no, week_index, leg_label in ((4, 3, "Lượt đi"), (6, 5, "Lượt về")):
+            slot_id = f"P2FC1R{round_no:02d}"
+            if slot_id in by_id:
+                continue
+            slots.append({
+                "id": slot_id,
+                "date": _date_in_week(anchor, phase2_offsets[week_index], fc1_wd).isoformat(),
+                "kind": "league_phase2", "phase2_tier": "fc1", "round": round_no,
+                "label": f"FC1 · Play-off trụ hạng · {leg_label}",
+                "played": False, "fixture_result_ids": {}, "match_ids": [],
+            })
+        self.s["slots"] = slots
+        self._shift_pending_calendar_after_played_matches()
+        self.s["slots"] = sorted(slots, key=lambda item: (str(item.get("date", "")), str(item.get("id", ""))))
+        self.s["calendar_schedule_version"] = 5
+        validate_calendar_slots(self.s["slots"], int(cfg.get("min_rest_days", 3)))
+        self._update_calendar_validation_metadata()
+
     def _migrate_league_phase2_schedule(self):
         """Migrate an in-progress legacy career to competition-specific weekdays.
 
@@ -1048,13 +1085,19 @@ class Game:
             self.s["calendar_schedule_version"] = 4
             return
         schedule_version = int(self.s.get("calendar_schedule_version", 0) or 0)
-        if schedule_version >= 4:
+        if schedule_version >= 5:
             self._update_calendar_validation_metadata()
+            if not self.s.get("league_phase2", {}).get("initialized"):
+                self._initialize_league_phase2_if_ready()
+            return
+        if schedule_version == 4:
+            self._migrate_v4_calendar_to_v5()
             if not self.s.get("league_phase2", {}).get("initialized"):
                 self._initialize_league_phase2_if_ready()
             return
         if schedule_version == 3:
             self._migrate_v3_calendar_to_v4()
+            self._migrate_v4_calendar_to_v5()
             if not self.s.get("league_phase2", {}).get("initialized"):
                 self._initialize_league_phase2_if_ready()
             return
@@ -1080,7 +1123,7 @@ class Game:
         league_offsets = calendar_cfg.get("league_week_offsets", [0,1,2,3,5,6,7,8,10,11,12,13,15,17])
         fc2_offsets = calendar_cfg.get("fc2_week_offsets", [0,2,4,5,7,8,9,10,12,13,14,15,17,19])
         cup_offsets = calendar_cfg.get("cup_week_offsets", [5,10,15,17,33])
-        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,36,37,38,39,40,41])
+        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,11,16,20,37,39,41])
         phase2_offsets = calendar_cfg.get("league_phase2_week_offsets", [30,31,32,33,34,35])
         day_by_tier = {"fc2": fc2_wd, "premier": premier_wd, "fc1": fc1_wd}
         week_offsets_by_tier = {"fc2": fc2_offsets, "premier": league_offsets, "fc1": league_offsets}
@@ -1296,6 +1339,7 @@ class Game:
         self.s["calendar_schedule_version"] = 4
         validate_calendar_slots(self.s["slots"], min_rest)
         self._update_calendar_validation_metadata()
+        self._migrate_v4_calendar_to_v5()
         if not self.s.get("league_phase2", {}).get("initialized"):
             self._initialize_league_phase2_if_ready()
 
@@ -1312,12 +1356,13 @@ class Game:
             "fc2_weekday": str(calendar_cfg.get("fc2_day", "fri")),
             "cup_weekday": str(calendar_cfg.get("cup_day", "tue")),
             "midweek_day": str(calendar_cfg.get("midweek_day", "wed")),
-            "schedule_version": 4,
+            "schedule_version": 5,
         }
 
     def _initialize_league_phase2_if_ready(self):
         phase2 = self.s.setdefault("league_phase2", self._empty_league_phase2())
         if phase2.get("initialized"):
+            self._fc1_relegation_playoff_entry()
             return True
         regular_matches = {tier: [m for m in self.s.get("matches", [])
                                   if m.get("played") and m.get("comp") == TIER_LABELS[tier]
@@ -1353,7 +1398,23 @@ class Game:
             }
         phase2["initialized"] = True
         phase2["initialized_season"] = int(self.s["season"])
+        self._fc1_relegation_playoff_entry(tables.get("fc1"))
         return True
+
+    def _fc1_relegation_playoff_entry(self, phase1_table=None):
+        """Return the FC1 6th-v-7th relegation tie, creating its participants once known."""
+        phase2 = self.s.setdefault("league_phase2", self._empty_league_phase2())
+        entry = phase2.setdefault("relegation_playoff", {
+            "teams": {}, "leg1_match": None, "leg2_match": None, "winner": None, "loser": None,
+        })
+        entry.setdefault("teams", {})
+        for key in ("leg1_match", "leg2_match", "winner", "loser"):
+            entry.setdefault(key, None)
+        if not entry.get("teams") and phase2.get("initialized"):
+            rows = phase1_table if phase1_table is not None else self.league_phase1_table("fc1")
+            if len(rows) >= 8:
+                entry["teams"] = {"sixth": rows[5]["team"], "seventh": rows[6]["team"]}
+        return entry
 
     def _phase2_fixture_specs(self, slot, include_played=False):
         """Build phase-two Premier and promotion-playoff fixtures for a phase-two slot."""
@@ -1366,14 +1427,15 @@ class Game:
         result_ids = slot.get("fixture_result_ids", {})
         specs = []
 
-        def add(key, comp, round_label, home, away, *, force_winner=False, stage, **meta):
+        def add(key, comp, round_label, home, away, *, force_winner=False,
+                aggregate_before=None, stage, **meta):
             if not include_played and key in result_ids:
                 return
             specs.append({
                 "spec_key": key, "slot_id": slot["id"], "season": int(self.s["season"]),
                 "date": slot["date"], "comp": comp, "round": round_label,
                 "home": home, "away": away, "neutral": False,
-                "force_winner": bool(force_winner), "aggregate_before": None,
+                "force_winner": bool(force_winner), "aggregate_before": aggregate_before,
                 "stage": stage, "_meta": meta,
             })
 
@@ -1412,6 +1474,23 @@ class Game:
                     add(f"promotion:{tier}:{stage_key}", TIER_LABELS[tier], phase_label, home, away,
                         force_winner=True, stage=f"promotion_{tier}_{stage_key}",
                         bucket="promotion_playoff", tier=tier, stage_key=stage_key)
+
+        # FC1 relegation play-off: 7th hosts leg one, 6th hosts leg two.
+        if phase2_tier == "fc1" and round_index in (3, 5):
+            entry = self._fc1_relegation_playoff_entry()
+            teams = entry.get("teams", {})
+            sixth, seventh = teams.get("sixth"), teams.get("seventh")
+            if round_index == 3 and sixth and seventh:
+                add("relegation:fc1:leg1", TIER_LABELS["fc1"],
+                    "Play-off trụ hạng · Lượt đi", seventh, sixth,
+                    stage="relegation_fc1_leg1", bucket="fc1_relegation", leg_key="leg1")
+            elif round_index == 5 and sixth and seventh and entry.get("leg1_match"):
+                first = self.match_by_id(entry["leg1_match"])
+                aggregate_before = (int(first.get("ag", 0) or 0), int(first.get("hg", 0) or 0))
+                add("relegation:fc1:leg2", TIER_LABELS["fc1"],
+                    "Play-off trụ hạng · Lượt về", sixth, seventh,
+                    force_winner=True, aggregate_before=aggregate_before,
+                    stage="relegation_fc1_leg2", bucket="fc1_relegation", leg_key="leg2")
         return specs
 
     def future_phase2_fixtures(self, slot):
@@ -1458,6 +1537,28 @@ class Game:
         return {"teams": teams, "matches": matches, "winner": entry.get("winner"),
                 "ready": bool(phase2.get("initialized"))}
 
+    def relegation_playoff_summary(self):
+        """Return FC1 two-leg survival tie and its aggregate score."""
+        entry = self._fc1_relegation_playoff_entry()
+        matches = {}
+        for key, field in (("leg1", "leg1_match"), ("leg2", "leg2_match")):
+            mid = entry.get(field)
+            matches[key] = self.match_by_id(mid) if mid else None
+        teams = dict(entry.get("teams") or {})
+        aggregate = None
+        if matches["leg1"] and matches["leg2"]:
+            first, second = matches["leg1"], matches["leg2"]
+            aggregate = {
+                "sixth": int(first.get("ag", 0) or 0) + int(second.get("hg", 0) or 0),
+                "seventh": int(first.get("hg", 0) or 0) + int(second.get("ag", 0) or 0),
+            }
+        winner = entry.get("winner") or (matches["leg2"].get("winner") if matches["leg2"] else None)
+        loser = entry.get("loser")
+        if winner and not loser:
+            loser = teams.get("seventh") if winner == teams.get("sixth") else teams.get("sixth")
+        return {"teams": teams, "matches": matches, "aggregate": aggregate,
+                "winner": winner, "loser": loser, "ready": bool(teams)}
+
     def league_phase1_table(self, tier):
         if tier not in TIERS: tier = TIER_KEY_BY_LABEL.get(tier, "premier")
         teams = [t for t, tr in self.s["season_tiers"].items() if tr == tier]
@@ -1496,7 +1597,9 @@ class Game:
             "matches": [], "slots": [], "slot_cursor": 0, "next_match_id": 1,
             "league_fixtures": {}, "league_phase2": {},
             "cup": {"bracket": {}, "winner": None, "runner_up": None},
-            "c1": {}, "season_stats": {}, "history": [], "last_development": [],
+            "c1": {}, "season_stats": {}, "club_season_player_stats": {},
+            "club_season_player_stats_version": 1, "club_season_player_match_ids": [],
+            "history": [], "last_development": [],
             "competition_awards": {}, "season_awards": None,
             "last_promotions": {"promoted": [], "relegated": []}, "last_news": [], "last_match_date": {}
         }
@@ -1537,6 +1640,18 @@ class Game:
         # Award registries are additive fields so older career saves remain compatible.
         s.setdefault("competition_awards", {})
         s.setdefault("season_awards", None)
+        if int(s.get("club_season_player_stats_version", 0) or 0) < 1:
+            # Rebuild the active season from its still-detailed match logs exactly once.
+            s["club_season_player_stats"] = {}
+            s["club_season_player_match_ids"] = []
+            if not s.get("season_done"):
+                for old_match in s.get("matches", []) or []:
+                    if old_match.get("played", True):
+                        self._update_club_season_player_stats(old_match)
+            s["club_season_player_stats_version"] = 1
+        else:
+            s.setdefault("club_season_player_stats", {})
+            s.setdefault("club_season_player_match_ids", [])
         for stat in (s.get("season_stats", {}) or {}).values():
             if isinstance(stat, dict):
                 stat.setdefault("injury_days", 0)
@@ -2024,6 +2139,9 @@ class Game:
         s["season_tiers"] = dict(s["team_tiers"])
         s["season_seed_order"] = list(s["seed_order"])
         s["season_stats"] = {pid: self._empty_stat() for ids in s["rosters"].values() for pid in ids}
+        s["club_season_player_stats"] = {}
+        s["club_season_player_stats_version"] = 1
+        s["club_season_player_match_ids"] = []
         for team in s["rosters"]:
             for pid in s["rosters"][team]:
                 s["dyn"].setdefault(pid, {"form": 0.0, "fit": 100.0})
@@ -2053,7 +2171,7 @@ class Game:
         league_offsets = calendar_cfg.get("league_week_offsets", [0,1,2,3,5,6,7,8,10,11,12,13,15,17])
         fc2_offsets = calendar_cfg.get("fc2_week_offsets", [0,2,4,5,7,8,9,10,12,13,14,15,17,19])
         cup_offsets = calendar_cfg.get("cup_week_offsets", [5,10,15,17,33])
-        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,36,37,38,39,40,41])
+        c1_offsets = calendar_cfg.get("c1_week_offsets", [1,3,6,11,16,20,37,39,41])
         phase2_offsets = calendar_cfg.get("league_phase2_week_offsets", [30,31,32,33,34,35])
         tier_weekdays = {"fc2": fc2_weekday, "premier": premier_weekday, "fc1": fc1_weekday}
         tier_week_offsets = {"fc2": fc2_offsets, "premier": league_offsets, "fc1": league_offsets}
@@ -2097,8 +2215,15 @@ class Game:
                                   "kind": "league_phase2", "phase2_tier": tier, "round": i,
                                   "label": f"{tier_labels[tier]} · Play-off thăng hạng · Vòng {i}",
                                   "played": False, "fixture_result_ids": {}, "match_ids": []})
+        for round_no, week_index, leg_label in ((4, 3, "Lượt đi"), (6, 5, "Lượt về")):
+            week = phase2_offsets[week_index]
+            slots.append({"id": f"P2FC1R{round_no:02d}",
+                          "date": _date_in_week(league_anchor, week, fc1_weekday).isoformat(),
+                          "kind": "league_phase2", "phase2_tier": "fc1", "round": round_no,
+                          "label": f"FC1 · Play-off trụ hạng · {leg_label}", "played": False,
+                          "fixture_result_ids": {}, "match_ids": []})
         s["slots"] = sorted(slots, key=lambda x: (x["date"], x["id"]))
-        s["calendar_schedule_version"] = 4
+        s["calendar_schedule_version"] = 5
         # C1 Final is intentionally the final dated slot of the season.
         if max(s["slots"], key=lambda item: item["date"]).get("kind") != "c1_final":
             raise ValueError("C1 Final phải là trận cuối cùng trong lịch mùa giải.")
@@ -2114,6 +2239,8 @@ class Game:
                         "phase1_table": []},
             "promotion_playoffs": {tier: {"teams": {}, "semi_match": None, "final_match": None, "winner": None}
                                    for tier in ("fc1", "fc2")},
+            "relegation_playoff": {"teams": {}, "leg1_match": None, "leg2_match": None,
+                                   "winner": None, "loser": None},
         }
         for tier in TIERS:
             teams = sorted([t for t, tr in s["season_tiers"].items() if tr == tier], key=lambda t: seeds.index(t))
@@ -2187,6 +2314,7 @@ class Game:
             self._update_enhanced_match_state(match)
         else:
             self._update_player_match_stats(match)
+        self._update_club_season_player_stats(match)
         s["matches"].append(match)
         s["last_match_date"][home] = str(match_date)
         s["last_match_date"][away] = str(match_date)
@@ -2578,6 +2706,17 @@ class Game:
                 entry["final_match"] = int(match["id"])
                 entry["winner"] = match["winner"]
 
+        elif bucket == "fc1_relegation":
+            entry = self._fc1_relegation_playoff_entry()
+            if meta["leg_key"] == "leg1":
+                entry["leg1_match"] = int(match["id"])
+            elif meta["leg_key"] == "leg2":
+                entry["leg2_match"] = int(match["id"])
+                entry["winner"] = match.get("winner")
+                teams = entry.get("teams", {})
+                entry["loser"] = (teams.get("seventh") if entry["winner"] == teams.get("sixth")
+                                  else teams.get("sixth")) if entry["winner"] else None
+
         elif bucket == "cup":
             cup = self.s["cup"]
             bracket_key = meta["bracket_key"]
@@ -2966,6 +3105,152 @@ class Game:
         return {"finished": False, "slot": slot, "matches": slot_matches,
                 "message": self.s["last_news"][0] if self.s.get("last_news") else "Đã hoàn tất slot."}
 
+    def _update_club_season_player_stats(self, match):
+        """Accumulate season totals against the club a player represented in this match."""
+        s = self.s
+        if not isinstance(match, dict):
+            return
+        season = int(match.get("season", s.get("season", 0)) or s.get("season", 0))
+        if season != int(s.get("season", season) or season):
+            return
+        match_id = match.get("id")
+        identity = (f"{season}:{match_id}" if match_id is not None else
+                    f"{season}:{match.get('date')}:{match.get('comp')}:{match.get('home')}:{match.get('away')}")
+        seen = s.setdefault("club_season_player_match_ids", [])
+        if identity in seen:
+            return
+
+        all_stats = s.setdefault("club_season_player_stats", {})
+        players = s.get("players", {}) or {}
+        home, away = match.get("home"), match.get("away")
+        sides = (("h", home), ("a", away))
+        side_ids = {}
+        side_minutes = {}
+        side_details = {}
+        side_sub_minutes = {}
+        player_clubs = {}
+
+        for side, club in sides:
+            minute_key = "minutes_" + side
+            minutes = {str(pid): value for pid, value in (match.get(minute_key) or {}).items()}
+            details = {str(pid): value for pid, value in
+                       ((match.get("player_stats") or {}).get(side, {}) or {}).items()}
+            used = {str(pid) for pid in (match.get("xi_" + side, []) or []) if pid}
+            sub_minutes = {}
+            for item in match.get("subs_" + side, []) or []:
+                if isinstance(item, dict):
+                    incoming = item.get("in") or item.get("player_in") or item.get("player_id")
+                    minute = item.get("minute", item.get("m", 0))
+                elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                    minute, incoming = item[0], item[2]
+                else:
+                    continue
+                if incoming:
+                    pid = str(incoming)
+                    used.add(pid)
+                    try:
+                        sub_minutes[pid] = max(1, 90 - int(minute or 0))
+                    except (TypeError, ValueError):
+                        sub_minutes[pid] = 1
+            for pid, value in minutes.items():
+                try:
+                    if float(value or 0) > 0:
+                        used.add(pid)
+                except (TypeError, ValueError):
+                    pass
+            for pid, detail in details.items():
+                try:
+                    if float((detail or {}).get("min", (detail or {}).get("minutes", 0)) or 0) > 0:
+                        used.add(pid)
+                except (TypeError, ValueError):
+                    pass
+            side_ids[side] = used
+            side_minutes[side] = minutes
+            side_details[side] = details
+            side_sub_minutes[side] = sub_minutes
+            for pid in used:
+                player_clubs[pid] = (side, club)
+
+        goals_by_side = {side: Counter() for side, _club in sides}
+        assists_by_side = {side: Counter() for side, _club in sides}
+        event_names = {}
+        for event in match.get("goals", []) or []:
+            if not isinstance(event, dict):
+                continue
+            event_side = event.get("side")
+            if event_side in ("home", "h"):
+                side = "h"
+            elif event_side in ("away", "a"):
+                side = "a"
+            else:
+                event_team = event.get("team")
+                side = next((key for key, club in sides if club and club == event_team), None)
+            scorer_id = event.get("scorer_id") or event.get("player_id")
+            assist_id = event.get("assist_id")
+            scorer_name = event.get("scorer") or event.get("player")
+            assist_name = event.get("assist") or event.get("assist_name")
+            if scorer_id:
+                scorer_id = str(scorer_id)
+                if side is None:
+                    side = player_clubs.get(scorer_id, (None, None))[0]
+                if side in goals_by_side:
+                    goals_by_side[side][scorer_id] += 1
+                    event_names.setdefault(scorer_id, scorer_name)
+            if assist_id:
+                assist_id = str(assist_id)
+                assist_side = side or player_clubs.get(assist_id, (None, None))[0]
+                if assist_side in assists_by_side:
+                    assists_by_side[assist_side][assist_id] += 1
+                    event_names.setdefault(assist_id, assist_name)
+
+        for side, club in sides:
+            if not club:
+                continue
+            detail_map = side_details[side]
+            minutes_map = side_minutes[side]
+            sub_minutes = side_sub_minutes[side]
+            ids = set(side_ids[side]) | set(goals_by_side[side]) | set(assists_by_side[side])
+            club_rows = all_stats.setdefault(str(club), {})
+            for raw_pid in ids:
+                pid = str(raw_pid)
+                detail = detail_map.get(pid, {}) or {}
+                player = players.get(pid, players.get(raw_pid, {})) or {}
+                try:
+                    played_minutes = int(float(minutes_map.get(pid, detail.get("min", detail.get("minutes", 0))) or 0))
+                except (TypeError, ValueError):
+                    played_minutes = 0
+                if played_minutes <= 0 and pid in sub_minutes:
+                    played_minutes = sub_minutes[pid]
+                if played_minutes <= 0 and pid in set(str(x) for x in (match.get("xi_" + side, []) or [])):
+                    played_minutes = 90
+                appeared = bool(pid in side_ids[side] or goals_by_side[side].get(pid) or assists_by_side[side].get(pid))
+                try:
+                    goals = int(detail["g"]) if "g" in detail else int(goals_by_side[side].get(pid, 0))
+                except (TypeError, ValueError):
+                    goals = int(goals_by_side[side].get(pid, 0))
+                try:
+                    assists = int(detail["a"]) if "a" in detail else int(assists_by_side[side].get(pid, 0))
+                except (TypeError, ValueError):
+                    assists = int(assists_by_side[side].get(pid, 0))
+                row = club_rows.setdefault(pid, {
+                    "player_id": pid,
+                    "player": player.get("common_name") or event_names.get(pid) or pid,
+                    "team": str(club),
+                    "position": player.get("position") or "",
+                    "apps": 0, "goals": 0, "assists": 0, "minutes": 0,
+                })
+                if appeared:
+                    row["apps"] += 1
+                row["goals"] += max(0, goals)
+                row["assists"] += max(0, assists)
+                row["minutes"] += max(0, played_minutes)
+                if not row.get("player") or row["player"] == pid:
+                    row["player"] = player.get("common_name") or event_names.get(pid) or pid
+                if not row.get("position"):
+                    row["position"] = player.get("position") or ""
+
+        seen.append(identity)
+
     def _update_player_match_stats(self, match):
         s = self.s
         home, away = match["home"], match["away"]
@@ -3194,7 +3479,9 @@ class Game:
                 self._assert_match_rest(spec["home"], spec["away"], spec["date"])
                 match = self._record_match(spec["comp"], spec["round"], spec["home"], spec["away"],
                                            spec["date"], neutral=spec["neutral"],
-                                           force_winner=spec["force_winner"], stage=spec["stage"])
+                                           force_winner=spec["force_winner"],
+                                           aggregate_before=spec.get("aggregate_before"),
+                                           stage=spec["stage"])
                 self._register_slot_fixture(slot, spec, match)
         elif kind.startswith("cup_"):
             self._handle_cup(slot)
@@ -5085,6 +5372,13 @@ class Game:
                    "champion": c1_winner, "runner_up": s["c1"].get("runner_up")},
             "qualification_table": points_table, "top_scorers": scorer_rows[:20], "top_assists": assist_rows[:20],
             "career_player_stats": [dict(row) for row in scorer_rows],
+            "club_player_stats": [
+                dict(row)
+                for club_rows in (s.get("club_season_player_stats", {}) or {}).values()
+                for row in club_rows.values()
+                if int(row.get("apps", 0) or 0) > 0 or int(row.get("goals", 0) or 0) > 0
+                or int(row.get("assists", 0) or 0) > 0
+            ],
             "competition_awards": {key: dict(value) for key, value in s.get("competition_awards", {}).items()},
             "season_awards": season_awards,
             "individual_awards": self._build_individual_awards(
@@ -5155,7 +5449,10 @@ class Game:
         if not up_f1_winner or not up_f2_winner:
             raise RuntimeError("Thiếu kết quả play-off lên hạng của FC1 hoặc FC2.")
         up_f1 = [f1[0]["team"], up_f1_winner]
-        down_f1 = [row["team"] for row in f1[-2:]]
+        relegation_tie = self.relegation_playoff_summary()
+        if not relegation_tie.get("winner") or not relegation_tie.get("loser"):
+            raise RuntimeError("Thiếu kết quả play-off trụ hạng FC1 (hai lượt trận).")
+        down_f1 = [f1[-1]["team"], relegation_tie["loser"]]
         up_f2 = [f2[0]["team"], up_f2_winner]
         for team in down_pl: self.s["team_tiers"][team] = "fc1"
         for team in up_f1: self.s["team_tiers"][team] = "premier"
@@ -5166,7 +5463,9 @@ class Game:
                     [{"team": team, "from": "fc2", "to": "fc1",
                       "path": "Vô địch GĐ1" if team == f2[0]["team"] else "Thắng play-off"} for team in up_f2])
         relegated = ([{"team": team, "from": "premier", "to": "fc1", "path": "Challenge · Top 2 cuối"} for team in down_pl] +
-                     [{"team": team, "from": "fc1", "to": "fc2", "path": "BXH GĐ1 · Hạng 7–8"} for team in down_f1])
+                     [{"team": f1[-1]["team"], "from": "fc1", "to": "fc2", "path": "BXH GĐ1 · Hạng 8"},
+                      {"team": relegation_tie["loser"], "from": "fc1", "to": "fc2",
+                       "path": "Thua play-off trụ hạng · Hạng 6–7"}])
         counts = Counter(self.s["team_tiers"].values())
         if counts != Counter({"premier": 8, "fc1": 8, "fc2": 8}):
             raise RuntimeError(f"Lỗi lên/xuống hạng: phân bổ sau mùa không còn 8-8-8 ({dict(counts)}).")
@@ -5765,11 +6064,11 @@ class Game:
                 "cup": 0, "c1": 0, "total": 0, "rank": None}
 
     def career_player_legends(self, team=None, limit=11):
-        """Career all-time leaders from season snapshots or saved match records.
+        """Career leaders by club, using club-specific season totals when available.
 
-        New season archives store full per-player season totals. Older archives fall
-        back to their saved XI/substitute lists and goal events. If an old match did
-        not store substitutes or minutes, those unavailable values are not guessed.
+        New archives retain player totals for each club separately. Older archives
+        fall back to their season snapshots or saved match records; unavailable
+        historical minutes/appearances are not guessed.
         """
         players = self.s.get("players", {})
         aggregate = {}
@@ -5863,12 +6162,52 @@ class Game:
         # Completed seasons created by this version use full season_stats snapshots.
         # Old records without the snapshot remain readable through match-level fallback.
         for season_record in self.s.get("history", []):
+            club_snapshot = season_record.get("club_player_stats")
             snapshot = season_record.get("career_player_stats")
-            if isinstance(snapshot, list):
-                for row in snapshot:
+            if isinstance(club_snapshot, list) and club_snapshot:
+                # New archives retain one row per player and the club represented in that season.
+                for row in club_snapshot:
                     add_totals(row.get("player_id"), row.get("player"), row.get("team"),
                                row.get("position"), row.get("apps", 0), row.get("goals", 0),
                                row.get("assists", 0), row.get("minutes", 0))
+            elif isinstance(snapshot, list):
+                # Legacy archives stored only the player's end-of-season club.
+                # Compact match logs still retain scorer IDs and clubs, so restore
+                # goal credit to the club that actually scored while leaving
+                # appearances/assists on the archived season snapshot.
+                legacy_goal_counts = Counter()
+                legacy_goal_names = {}
+                for match in season_record.get("matches", []) or []:
+                    if not match.get("played", True):
+                        continue
+                    for event in match.get("goals", []) or []:
+                        if not isinstance(event, dict):
+                            continue
+                        pid = event.get("scorer_id") or event.get("player_id")
+                        club = event.get("team")
+                        if not pid or not club:
+                            continue
+                        key = (str(pid), str(club))
+                        legacy_goal_counts[key] += 1
+                        legacy_goal_names.setdefault(key, event.get("scorer") or event.get("player"))
+                scorer_ids = {pid for pid, _club in legacy_goal_counts}
+                snapshot_by_id = {str(row.get("player_id")): row for row in snapshot
+                                  if isinstance(row, dict) and row.get("player_id")}
+                for row in snapshot:
+                    if not isinstance(row, dict):
+                        continue
+                    pid = str(row.get("player_id") or "")
+                    snapshot_goals = 0 if pid in scorer_ids else row.get("goals", 0)
+                    add_totals(row.get("player_id"), row.get("player"), row.get("team"),
+                               row.get("position"), row.get("apps", 0), snapshot_goals,
+                               row.get("assists", 0), row.get("minutes", 0))
+                for (pid, club), count in legacy_goal_counts.items():
+                    row = snapshot_by_id.get(pid, {})
+                    player_row = players.get(pid, {}) or {}
+                    add_totals(pid, row.get("player") or legacy_goal_names.get((pid, club))
+                               or player_row.get("common_name") or pid,
+                               club, row.get("position") or player_row.get("position") or "",
+                               0, count, 0, 0)
             else:
                 for match in season_record.get("matches", []) or []:
                     if match.get("played", True):
@@ -5880,7 +6219,36 @@ class Game:
         has_current_totals = isinstance(current_stats, dict) and any(
             any(int(stat.get(key, 0) or 0) for key in ("apps", "goals", "assists"))
             for stat in current_stats.values() if isinstance(stat, dict))
-        if not self.s.get("season_done") and has_current_totals:
+        current_club_stats = self.s.get("club_season_player_stats", {}) or {}
+        has_current_club_stats = any(
+            isinstance(player_rows, dict) and bool(player_rows)
+            for player_rows in current_club_stats.values()
+        )
+        if not self.s.get("season_done") and has_current_club_stats:
+            tracked_player_ids = set()
+            for club, player_rows in current_club_stats.items():
+                for pid, row in (player_rows or {}).items():
+                    if not isinstance(row, dict):
+                        continue
+                    tracked_player_ids.add(str(pid))
+                    add_totals(row.get("player_id"), row.get("player"), club,
+                               row.get("position"), row.get("apps", 0), row.get("goals", 0),
+                               row.get("assists", 0), row.get("minutes", 0))
+            # Retain remaining active-save statistics when a very old match log
+            # did not preserve enough lineup detail to backfill the club snapshot.
+            team_by_player = {str(pid): club for club, ids in self.s.get("rosters", {}).items() for pid in ids}
+            for pid, stat in current_stats.items():
+                if str(pid) in tracked_player_ids or not isinstance(stat, dict):
+                    continue
+                club = team_by_player.get(str(pid)) or (players.get(pid, {}) or {}).get("club", "")
+                if not club or not any(int(stat.get(key, 0) or 0) for key in ("apps", "goals", "assists")):
+                    continue
+                player_row = players.get(pid, {}) or {}
+                add_totals(pid, player_row.get("common_name", str(pid)), club,
+                           player_row.get("position", ""), stat.get("apps", 0), stat.get("goals", 0),
+                           stat.get("assists", 0), stat.get("mins", 0))
+        elif not self.s.get("season_done") and has_current_totals:
+            # Legacy active saves without club-season rows can only use the surviving club field.
             team_by_player = {str(pid): club for club, ids in self.s.get("rosters", {}).items() for pid in ids}
             for pid, stat in current_stats.items():
                 club = team_by_player.get(str(pid)) or (players.get(pid, {}) or {}).get("club", "")
@@ -5907,6 +6275,174 @@ class Game:
         return {"appearances": appearances[:max(0, int(limit))],
                 "goals": goals[:max(0, int(limit))],
                 "assists": assists[:max(0, int(limit))]}
+
+    def club_history_analytics(self, team):
+        """Build club-only season finishes, match history and all-time statistics."""
+        if not team:
+            return {"seasons": [], "by_season": [], "by_competition": [], "matches": [],
+                    "stats": {}, "top11": [], "current_players": [], "former_players": []}
+
+        all_matches = [dict(match) for match in self._career_match_records()
+                       if team in (match.get("home"), match.get("away"))]
+        all_matches.sort(key=lambda row: (int(row.get("season", 0) or 0),
+                                          str(row.get("date", "")), int(row.get("id", 0) or 0)))
+        seasons = {}
+        for record in self.s.get("history", []) or []:
+            season = int(record.get("season", 0) or 0)
+            if season:
+                seasons[season] = dict(record)
+        current_season = int(self.s.get("season", 0) or 0)
+        if current_season:
+            current_record = seasons.setdefault(current_season, {})
+            current_record.setdefault("season", current_season)
+            current_record.setdefault("matches", [
+                dict(match) for match in self.s.get("matches", [])
+                if int(match.get("season", current_season) or current_season) == current_season
+            ])
+
+        season_rows = []
+        competition_rows = []
+        competition_names = (("premier", "Premier League"), ("fc1", "FC1"),
+                             ("fc2", "FC2"), ("cup", "Major Cup"), ("c1", "C1"))
+        league_labels = {"premier": "Premier League", "fc1": "Football Championship 1",
+                         "fc2": "Football Championship 2"}
+        stage_labels = {
+            "cup_r1": "Vòng 1", "cup_r16": "Vòng 16", "cup_qf": "Tứ kết",
+            "cup_sf": "Bán kết", "cup_final": "Á quân",
+            "c1_pi": "Play-in", "c1_group": "Vòng bảng",
+            "c1_semi": "Bán kết", "c1_final": "Á quân",
+        }
+
+        def finish_for_competition(record, season, key):
+            record_matches = [m for m in (record.get("matches") or [])
+                              if m.get("played", True) and team in (m.get("home"), m.get("away"))]
+            comp_matches = [m for m in record_matches if (
+                (key == "cup" and m.get("comp") == "Cup") or
+                (key == "c1" and m.get("comp") in ("C1", "C1 Play-in"))
+            )]
+            if key in league_labels:
+                rows = (record.get("leagues", {}) or {}).get(key, []) or []
+                pos = next((i for i, row in enumerate(rows, 1) if row.get("team") == team), None)
+                if pos is None and season == current_season and not self.s.get("season_done"):
+                    table = (self.premier_phase2_tables()["champion"] + self.premier_phase2_tables()["challenge"]
+                             if key == "premier" and self.s.get("league_phase2", {}).get("initialized")
+                             else self.league_phase1_table(key))
+                    pos = next((i for i, row in enumerate(table, 1) if row.get("team") == team), None)
+                if not pos:
+                    return "—"
+                return f"Tạm thời · Hạng {pos}" if season == current_season and not self.s.get("season_done") else f"Hạng {pos}"
+            if key == "cup":
+                if season == current_season and not self.s.get("season_done"):
+                    return "Đang diễn ra" if comp_matches else "Chưa thi đấu"
+                if record.get("champion_cup") == team:
+                    return "Vô địch"
+                if record.get("runner_up_cup") == team:
+                    return "Á quân"
+                stages = [str(m.get("stage", "")) for m in comp_matches]
+                order = ("cup_final", "cup_sf", "cup_qf", "cup_r16", "cup_r1")
+                furthest = next((stage for stage in order if stage in stages), None)
+                return f"Dừng ở {stage_labels[furthest]}" if furthest else "Không tham dự"
+            if season == current_season and not self.s.get("season_done"):
+                if comp_matches:
+                    return "Đang diễn ra"
+                c1_state = self.s.get("c1", {}) or {}
+                eligible = set(c1_state.get("direct_teams", []) or []) | set(c1_state.get("playin_seed_teams", []) or [])
+                return "Chưa thi đấu" if team in eligible else "Không tham dự"
+            if record.get("champion_c1") == team or (record.get("c1") or {}).get("champion") == team:
+                return "Vô địch"
+            if record.get("runner_up_c1") == team or (record.get("c1") or {}).get("runner_up") == team:
+                return "Á quân"
+            stages = [str(m.get("stage", "")) for m in comp_matches]
+            if any(stage.startswith("c1_semi") for stage in stages):
+                return "Bán kết"
+            if any(stage.startswith("c1_group") for stage in stages):
+                return "Vòng bảng"
+            if any(stage.startswith("c1_pi") for stage in stages):
+                return "Play-in"
+            return "Không tham dự"
+
+        for season in sorted(seasons, reverse=True):
+            record = seasons[season]
+            row = {"season": season, "label": record.get("label", str(season))}
+            for key, label in competition_names:
+                finish = finish_for_competition(record, season, key)
+                row[key] = finish
+                if finish not in ("—", "Không tham dự"):
+                    competition_rows.append({"competition": label, "season": season, "finish": finish})
+            season_rows.append(row)
+        competition_order = {label: index for index, (_key, label) in enumerate(competition_names)}
+        competition_rows.sort(key=lambda row: (competition_order.get(row["competition"], 99),
+                                                -int(row.get("season", 0))))
+
+        wins = draws = losses = 0
+        biggest_win = biggest_loss = None
+        for match in all_matches:
+            home = match.get("home") == team
+            try:
+                gf = int(match.get("hg" if home else "ag"))
+                ga = int(match.get("ag" if home else "hg"))
+            except (TypeError, ValueError):
+                continue
+            if gf > ga:
+                wins += 1
+            elif gf == ga:
+                # A penalty shoot-out determines progression, not the 90-minute W/D/L.
+                draws += 1
+            else:
+                losses += 1
+            margin = abs(gf - ga)
+            home_goals = int(match.get("hg", 0) or 0)
+            away_goals = int(match.get("ag", 0) or 0)
+            competition = match.get("comp") or match.get("competition") or "Không rõ giải"
+            detail = {
+                "date": match.get("date") or "—",
+                "comp": competition,
+                "competition": competition,
+                "home": match.get("home") or "—",
+                "away": match.get("away") or "—",
+                "hg": home_goals,
+                "ag": away_goals,
+                "score": f"{home_goals}–{away_goals}",
+                "margin": margin,
+            }
+            if gf > ga and (biggest_win is None or margin > biggest_win["margin"]):
+                biggest_win = detail
+            if gf < ga and (biggest_loss is None or margin > biggest_loss["margin"]):
+                biggest_loss = detail
+
+        legends = self.career_player_legends(team=team, limit=100000)
+        appearances = legends.get("appearances") or []
+        current_ids = {str(pid) for pid in (self.s.get("rosters", {}).get(team, []) or [])}
+        current_players = {str(row.get("player_id")): dict(row) for row in appearances
+                           if str(row.get("player_id")) in current_ids}
+        for pid in current_ids:
+            if pid in current_players:
+                continue
+            player = (self.s.get("players", {}) or {}).get(pid, {}) or {}
+            current_players[pid] = {
+                "player_id": pid, "player": player.get("common_name") or pid,
+                "team": team, "position": player.get("position") or "",
+                "apps": 0, "goals": 0, "assists": 0, "minutes": 0,
+            }
+        current_rows = sorted(current_players.values(),
+                              key=lambda row: (-int(row.get("apps", 0) or 0),
+                                               -int(row.get("goals", 0) or 0),
+                                               -int(row.get("assists", 0) or 0),
+                                               str(row.get("player", "")).casefold()))
+        former_rows = [dict(row) for row in appearances
+                       if str(row.get("player_id")) not in current_ids
+                       and any(int(row.get(key, 0) or 0) > 0 for key in ("apps", "goals", "assists"))]
+        stats = {
+            "matches": len(all_matches), "wins": wins, "draws": draws, "losses": losses,
+            "top_scorer": (legends.get("goals") or [None])[0],
+            "top_assister": (legends.get("assists") or [None])[0],
+            "biggest_win": biggest_win, "biggest_loss": biggest_loss,
+            "first_match": all_matches[0] if all_matches else None,
+        }
+        return {"seasons": sorted(seasons, reverse=True), "by_season": season_rows,
+                "by_competition": competition_rows, "matches": all_matches,
+                "stats": stats, "top11": appearances[:11],
+                "current_players": current_rows, "former_players": former_rows}
 
     @staticmethod
     def _player_search_fold(value):

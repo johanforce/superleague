@@ -26,10 +26,27 @@ from sl_match.news import (
     reference_date_from_state,
     unique_headlines,
 )
-from sl_gui import BG, SIDEBAR, SURFACE, SURFACE_2, RAISED, SELECT, TEXT, MUTED, DIM, _UpcomingMatchGameProxy
+from sl_gui import (BG, SIDEBAR, SURFACE, SURFACE_2, RAISED, SELECT, TEXT, MUTED, DIM,
+                     _UpcomingMatchGameProxy, format_squad_role)
 from sl_match.report_ui import EVENT_STYLES
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class ContractRoleDisplayTests(unittest.TestCase):
+    def test_contract_role_codes_have_friendly_vietnamese_labels(self):
+        expected = {
+            "STAR": "Ngôi sao",
+            "FIRST_TEAM": "Đội hình chính",
+            "ROTATION": "Xoay tua",
+            "BACKUP": "Dự bị",
+            "PROSPECT": "Tài năng trẻ",
+        }
+        for code, label in expected.items():
+            with self.subTest(code=code):
+                self.assertEqual(format_squad_role(code), label)
+        self.assertEqual(format_squad_role(None), "—")
+        self.assertEqual(format_squad_role("FUTURE_ROLE"), "Future role")
 
 
 class LiveMatchDetailTests(unittest.TestCase):
@@ -507,18 +524,165 @@ class SimulatorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cao hơn hạng 8 premier"):
                 Game._validate_config(invalid)
 
+    def test_club_player_history_keeps_former_players_and_contributions_after_transfer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=20261111)
+            team, other_team = list(game.s["rosters"])[:2]
+            scorer_id, assist_id = game.s["rosters"][team][:2]
+            scorer_name = game.s["players"][scorer_id]["common_name"]
+            assist_name = game.s["players"][assist_id]["common_name"]
+            match = {
+                "id": 99991, "season": game.s["season"], "date": f"{game.s['season']}-08-20",
+                "comp": "Premier League", "home": team, "away": other_team, "hg": 2, "ag": 0,
+                "xi_h": [scorer_id, assist_id], "xi_a": [], "subs_h": [], "subs_a": [],
+                "minutes_h": {scorer_id: 90, assist_id: 90}, "minutes_a": {},
+                "player_stats": {
+                    "h": {scorer_id: {"min": 90, "g": 2, "a": 0},
+                          assist_id: {"min": 90, "g": 0, "a": 1}},
+                    "a": {},
+                },
+                "goals": [
+                    {"side": "home", "team": team, "scorer_id": scorer_id, "scorer": scorer_name,
+                     "assist_id": assist_id, "assist": assist_name},
+                    {"side": "home", "team": team, "scorer_id": scorer_id, "scorer": scorer_name},
+                ],
+            }
+            game._update_club_season_player_stats(match)
+
+            # Both players leave the club before the season is finalized.
+            game.s["rosters"][team].remove(scorer_id)
+            game.s["rosters"][team].remove(assist_id)
+            game.s["rosters"][other_team].extend([scorer_id, assist_id])
+            game.s["players"][scorer_id]["club"] = other_team
+            game.s["players"][assist_id]["club"] = other_team
+
+            legends = game.career_player_legends(team=team, limit=1000)
+            scorer = next(row for row in legends["goals"] if row["player_id"] == scorer_id)
+            assister = next(row for row in legends["assists"] if row["player_id"] == assist_id)
+            self.assertEqual((scorer["apps"], scorer["goals"]), (1, 2))
+            self.assertEqual((assister["apps"], assister["assists"]), (1, 1))
+            self.assertEqual(scorer["team"], team)
+            self.assertEqual(assister["team"], team)
+
+            club_data = game.club_history_analytics(team)
+            former_ids = {row["player_id"] for row in club_data["former_players"]}
+            current_ids = {row["player_id"] for row in club_data["current_players"]}
+            self.assertTrue({scorer_id, assist_id}.issubset(former_ids))
+            self.assertTrue({scorer_id, assist_id}.isdisjoint(current_ids))
+
+            # Completed-season club snapshots must remain readable after active stats reset.
+            archived_rows = [dict(row) for row in game.s["club_season_player_stats"][team].values()]
+            game.s["history"].append({
+                "season": int(game.s["season"]) - 1,
+                "club_player_stats": archived_rows,
+            })
+            game.s["club_season_player_stats"] = {}
+            archived_legends = game.career_player_legends(team=team, limit=1000)
+            archived_scorer = next(row for row in archived_legends["goals"] if row["player_id"] == scorer_id)
+            self.assertEqual((archived_scorer["apps"], archived_scorer["goals"]), (1, 2))
+
+    def test_legacy_archive_goal_events_restore_the_original_club(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=20261112)
+            original_club, current_club = list(game.s["rosters"])[:2]
+            player_id = game.s["rosters"][original_club][0]
+            player_name = game.s["players"][player_id]["common_name"]
+            game.s["rosters"][original_club].remove(player_id)
+            game.s["rosters"][current_club].append(player_id)
+            game.s["players"][player_id]["club"] = current_club
+            game.s["history"] = [{
+                "season": int(game.s["season"]) - 1,
+                "career_player_stats": [{
+                    "player_id": player_id, "player": player_name, "team": current_club,
+                    "position": game.s["players"][player_id]["position"],
+                    "apps": 5, "goals": 4, "assists": 1, "minutes": 450,
+                }],
+                "matches": [{
+                    "id": 1, "season": int(game.s["season"]) - 1, "played": True,
+                    "date": "2025-08-01", "comp": "Premier League",
+                    "home": original_club, "away": current_club, "hg": 1, "ag": 3,
+                    "goals": [
+                        {"team": original_club, "scorer_id": player_id, "scorer": player_name},
+                        {"team": current_club, "scorer_id": player_id, "scorer": player_name},
+                        {"team": current_club, "scorer_id": player_id, "scorer": player_name},
+                        {"team": current_club, "scorer_id": player_id, "scorer": player_name},
+                    ],
+                }],
+            }]
+
+            former_club_rows = game.career_player_legends(team=original_club, limit=100)
+            recovered = next(row for row in former_club_rows["goals"] if row["player_id"] == player_id)
+            self.assertEqual((recovered["team"], recovered["goals"]), (original_club, 1))
+            current_club_rows = game.career_player_legends(team=current_club, limit=100)
+            retained = next(row for row in current_club_rows["goals"] if row["player_id"] == player_id)
+            self.assertEqual((retained["apps"], retained["goals"], retained["assists"]),
+                             (5, 3, 1))
+
+    def test_fc1_relegation_return_leg_uses_aggregate_for_extra_time_and_penalties(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=20261113)
+            sixth, seventh = list(game.s["rosters"])[:2]
+            first_leg = {
+                "id": 1, "season": int(game.s["season"]), "played": True,
+                "date": "2027-05-01", "comp": "Football Championship 1",
+                "home": seventh, "away": sixth, "hg": 2, "ag": 1,
+                "winner": seventh, "goals": [],
+            }
+            game.s["matches"] = [first_leg]
+            game.s["next_match_id"] = 2
+            phase2 = game.s["league_phase2"]
+            phase2["initialized"] = True
+            phase2["relegation_playoff"] = {
+                "teams": {"sixth": sixth, "seventh": seventh},
+                "leg1_match": 1, "leg2_match": None, "winner": None, "loser": None,
+            }
+            return_slot = next(slot for slot in game.s["slots"] if slot["id"] == "P2FC1R06")
+            for slot in game.s["slots"]:
+                slot["played"] = slot is not return_slot
+            return_slot["fixture_result_ids"] = {}
+            return_slot["match_ids"] = []
+            game.config["match_engine"] = "legacy"
+
+            specs = game.slot_fixture_specs(return_slot, allow_future=True)
+            self.assertEqual(len(specs), 1)
+            self.assertTrue(specs[0]["force_winner"])
+            self.assertEqual(specs[0]["aggregate_before"], (1, 2))
+
+            # Regulation ends 1-0 for the home side: aggregate becomes 2-2.
+            # Extra time is 0-0, so the mocked shoot-out decides the tie.
+            poisson_values = iter((1, 0, 0, 0, 2, 1))
+            def deterministic_poisson(_lam, _rng):
+                return next(poisson_values, 1)
+
+            with patch.object(sl_game_module.eng, "poisson", side_effect=deterministic_poisson):
+                with patch.object(sl_game_module.eng, "_shootout", return_value={"home": 5, "away": 4}):
+                    with patch.object(game, "_complete_slot", return_value={"finished": False}):
+                        game.advance_slot(persist=False)
+
+            return_match = game.s["matches"][-1]
+            self.assertEqual((return_match["hg"], return_match["ag"]), (1, 0))
+            self.assertTrue(return_match["et"])
+            self.assertEqual(return_match["pens"], {"home": 5, "away": 4})
+            self.assertEqual(return_match["winner"], sixth)
+            tie = game.relegation_playoff_summary()
+            self.assertEqual(tie["winner"], sixth)
+            self.assertEqual(tie["loser"], seventh)
+
     def test_full_season_and_roster_invariants(self):
         with tempfile.TemporaryDirectory() as tmp:
             game = Game(data_dir=tmp, fresh=True)
+            self.assertEqual(game.relegation_playoff_summary()["teams"], {})
             # Keep this regression deterministic and independent from a user's
             # local award_settings.json (which may intentionally customize apps).
             game.award_settings = dict(AWARD_SETTINGS_DEFAULTS)
             record = game.simulate_full_season(persist_each_slot=False)
-            self.assertEqual(record["match_count"], 246)
-            self.assertEqual(len(game.s["matches"]), 246)
+            self.assertEqual(record["match_count"], 248)
+            self.assertEqual(len(game.s["matches"]), 248)
             comps = Counter(m["comp"] for m in game.s["matches"])
             self.assertEqual(comps["Premier League"], 80)  # 56 phase 1 + 12 Champion + 12 Challenge
-            self.assertEqual(comps["Football Championship 1"], 58)  # 56 + two promotion play-offs
+            self.assertEqual(comps["Football Championship 1"], 60)  # 56 + two promotion + two relegation play-offs
             self.assertEqual(comps["Football Championship 2"], 58)  # 56 + two promotion play-offs
             self.assertEqual(comps["Cup"], 23)
             self.assertEqual(comps["C1 Play-in"] + comps["C1"], 27)
@@ -555,12 +719,42 @@ class SimulatorTests(unittest.TestCase):
                 self.assertEqual(playoff["semi_match"] is not None, True)
                 self.assertEqual(playoff["final_match"] is not None, True)
                 self.assertIn(playoff["winner"], (playoff["teams"]["second"], game.match_by_id(playoff["semi_match"])["winner"]))
+            relegation = phase2["relegation_playoff"]
+            leg1 = game.match_by_id(relegation["leg1_match"])
+            leg2 = game.match_by_id(relegation["leg2_match"])
+            self.assertEqual((leg1["home"], leg1["away"]),
+                             (relegation["teams"]["seventh"], relegation["teams"]["sixth"]))
+            self.assertEqual((leg2["home"], leg2["away"]),
+                             (relegation["teams"]["sixth"], relegation["teams"]["seventh"]))
+            self.assertIn(relegation["winner"], (relegation["teams"]["sixth"], relegation["teams"]["seventh"]))
+            self.assertIn(relegation["loser"], (relegation["teams"]["sixth"], relegation["teams"]["seventh"]))
+            self.assertNotEqual(relegation["winner"], relegation["loser"])
+            fc1_table = game.league_phase1_table("fc1")
+            relegated_fc1 = {row["team"] for row in record["relegated"] if row["from"] == "fc1"}
+            self.assertEqual(relegated_fc1, {fc1_table[-1]["team"], relegation["loser"]})
             self.assertEqual(Counter(game.s["team_tiers"].values()), Counter({"premier":8,"fc1":8,"fc2":8}))
+            club_data = game.club_history_analytics(relegation["teams"]["sixth"])
+            self.assertEqual(club_data["stats"]["matches"],
+                             club_data["stats"]["wins"] + club_data["stats"]["draws"] + club_data["stats"]["losses"])
+            self.assertTrue(club_data["stats"]["first_match"])
+            for result_key in ("biggest_win", "biggest_loss"):
+                result = club_data["stats"][result_key]
+                self.assertIsNotNone(result, result_key)
+                self.assertEqual(result["comp"], result["competition"])
+                self.assertIsInstance(result["hg"], int)
+                self.assertIsInstance(result["ag"], int)
+                self.assertTrue(result["home"])
+                self.assertTrue(result["away"])
+                self.assertTrue(result["date"])
+            self.assertLessEqual(len(club_data["top11"]), 11)
             self.assertEqual(len(record["qualification_table"]), 24)
             self.assertEqual(len(game.s["history"]), 1)
             self.assertIn("career_player_stats", record)
             self.assertTrue(record["career_player_stats"])
+            self.assertIn("club_player_stats", record)
+            self.assertTrue(record["club_player_stats"])
             self.assertTrue({"player_id", "player", "team", "apps", "goals", "assists", "minutes"}.issubset(record["career_player_stats"][0]))
+            self.assertTrue({"player_id", "player", "team", "apps", "goals", "assists", "minutes"}.issubset(record["club_player_stats"][0]))
             annual = record["season_awards"]
             self.assertEqual(annual.get("best_xi_version"), 8)
             top20 = annual.get("top20_players", [])
@@ -621,7 +815,7 @@ class SimulatorTests(unittest.TestCase):
                                 for row in migrated.get("ballon_podium", [])))
             self.assertTrue(all(row.get("award_eligible") and int(row.get("apps", 0)) > 20
                                 for row in migrated.get("best_xi_442", [])))
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             self.assertTrue(game.s["calendar_validation"]["valid"])
             self.assertEqual(len(record["promoted"]), 4)
             self.assertEqual(len(record["relegated"]), 4)
@@ -649,7 +843,7 @@ class SimulatorTests(unittest.TestCase):
             game.next_season()
             self.assertEqual(Counter(game.s["team_tiers"].values()), Counter({"premier":8,"fc1":8,"fc2":8}))
             self.assertEqual(len(game.s["league_fixtures"]["premier"]), 14)
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             self.assertEqual(game.s["season"], 2027)
 
     def test_league_phase2_format_and_promotion_paths(self):
@@ -714,10 +908,10 @@ class SimulatorTests(unittest.TestCase):
             upgraded = Game(data_dir=tmp, seed=777)
             self.assertEqual(upgraded.s["matches"], json.loads(json.dumps(previous_matches)))
             phase2_slots = [slot for slot in upgraded.s["slots"] if slot.get("kind") == "league_phase2"]
-            self.assertEqual(len(phase2_slots), 10)
-            self.assertEqual(len(upgraded.s["slots"]), 66)
+            self.assertEqual(len(phase2_slots), 12)
+            self.assertEqual(len(upgraded.s["slots"]), 68)
             self.assertTrue(upgraded.s["calendar_validation"]["valid"])
-            self.assertEqual(upgraded.s["calendar_validation"]["slots"], 66)
+            self.assertEqual(upgraded.s["calendar_validation"]["slots"], 68)
             latest_played = max(match["date"] for match in upgraded.s["matches"])
             self.assertGreaterEqual(
                 (date.fromisoformat(upgraded.next_slot()["date"]) - date.fromisoformat(latest_played)).days, 3
@@ -744,7 +938,7 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(game.s["season"], 2027)
             self.assertEqual(date.fromisoformat(game.s["season_start_date"]).year, 2027)
             expected_tier_weekdays = {"fc2": 4, "premier": 5, "fc1": 6}
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             dates = [date.fromisoformat(slot["date"]) for slot in game.s["slots"]]
             self.assertEqual(len(dates), len(set(dates)))
             for slot in game.s["slots"]:
@@ -758,13 +952,44 @@ class SimulatorTests(unittest.TestCase):
                 elif slot["kind"].startswith("c1_"):
                     self.assertEqual(weekday, 2, slot)  # Wednesday
             self.assertTrue(game.s["calendar_validation"]["valid"])
-            self.assertEqual(game.s["calendar_schedule_version"], 4)
+            self.assertEqual(game.s["calendar_schedule_version"], 5)
+            slots = {slot["id"]: slot for slot in game.s["slots"]}
+            anchor = date.fromisoformat(game.s["season_start_date"])
+            self.assertEqual([date.fromisoformat(slots[f"C1{i}"]["date"]) for i in range(1, 10)],
+                             [anchor + timedelta(weeks=week, days=-3)
+                              for week in (1, 3, 6, 11, 16, 20, 37, 39, 41)])
+            self.assertEqual(slots["P2FC1R04"]["kind"], "league_phase2")
+            self.assertEqual(slots["P2FC1R06"]["kind"], "league_phase2")
             self.assertEqual(game.s["calendar_validation"]["fc2_weekday"], "fri")
             self.assertEqual(game.s["calendar_validation"]["league_weekday"], "sat")
             self.assertEqual(game.s["calendar_validation"]["fc1_weekday"], "sun")
             self.assertEqual(game.s["calendar_validation"]["cup_weekday"], "tue")
             self.assertEqual(game.s["calendar_validation"]["midweek_day"], "wed")
             self.assertTrue(all(d >= date.fromisoformat(cfg["calendar"]["start_date"]) for d in dates))
+
+    def test_v4_calendar_migration_adds_fc1_relegation_legs_and_interleaves_c1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Game(data_dir=tmp, fresh=True, seed=99881)
+            anchor = date.fromisoformat(game.s["season_start_date"])
+            game.s["slots"] = [slot for slot in game.s["slots"]
+                               if slot["id"] not in ("P2FC1R04", "P2FC1R06")]
+            old_c1_offsets = [1, 3, 6, 36, 37, 38, 39, 40, 41]
+            for index, week in enumerate(old_c1_offsets, 1):
+                slot = next(item for item in game.s["slots"] if item["id"] == f"C1{index}")
+                slot["date"] = (anchor + timedelta(weeks=week, days=-3)).isoformat()
+            game.s["calendar_schedule_version"] = 4
+            game.save()
+
+            migrated = Game(data_dir=tmp, seed=99881)
+            slots = {slot["id"]: slot for slot in migrated.s["slots"]}
+            self.assertEqual(migrated.s["calendar_schedule_version"], 5)
+            self.assertEqual(len(migrated.s["slots"]), 68)
+            self.assertEqual(slots["P2FC1R04"]["label"], "FC1 · Play-off trụ hạng · Lượt đi")
+            self.assertEqual(slots["P2FC1R06"]["label"], "FC1 · Play-off trụ hạng · Lượt về")
+            self.assertEqual(date.fromisoformat(slots["C14"]["date"]),
+                             anchor + timedelta(weeks=11, days=-3))
+            self.assertEqual(slots["C19"]["date"], max(slot["date"] for slot in migrated.s["slots"]))
+            self.assertTrue(migrated.s["calendar_validation"]["valid"])
 
     def test_schedule_v2_save_retimes_unplayed_fixtures_to_current_weekday_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -783,12 +1008,13 @@ class SimulatorTests(unittest.TestCase):
             resumed = Game(data_dir=tmp, seed=778812)
             migrated = next(slot for slot in resumed.s["slots"] if slot["id"] == "CUP2")
             resumed_played_slot = next(slot for slot in resumed.s["slots"] if slot["id"] == "L01_FC2")
-            expected = anchor + timedelta(weeks=11, days=1 - anchor.weekday())  # pending calendar shifted one week past the completed Friday slot
+            expected = anchor + timedelta(weeks=game.config["calendar"]["cup_week_offsets"][1],
+                                                days=1 - anchor.weekday())
             self.assertEqual(date.fromisoformat(migrated["date"]), expected)
             self.assertTrue(resumed_played_slot["played"])
             self.assertEqual(resumed_played_slot["date"], played_slot_date)
             self.assertEqual(resumed.s["matches"], prior_matches)
-            self.assertEqual(resumed.s["calendar_schedule_version"], 4)
+            self.assertEqual(resumed.s["calendar_schedule_version"], 5)
             self.assertTrue(resumed.s["calendar_validation"]["valid"])
 
     def test_c1_playin_cup_final_and_c1_final_ordering(self):
@@ -848,7 +1074,7 @@ class SimulatorTests(unittest.TestCase):
 
             migrated = Game(data_dir=tmp, seed=86420)
             slots = {slot["id"]: slot for slot in migrated.s["slots"]}
-            self.assertEqual(migrated.s["calendar_schedule_version"], 4)
+            self.assertEqual(migrated.s["calendar_schedule_version"], 5)
             self.assertEqual(date.fromisoformat(slots["C11"]["date"]), anchor + timedelta(weeks=1, days=-3))
             self.assertEqual(date.fromisoformat(slots["C12"]["date"]), anchor + timedelta(weeks=3, days=-3))
             self.assertEqual(date.fromisoformat(slots["C13"]["date"]), anchor + timedelta(weeks=6, days=-3))
@@ -876,7 +1102,7 @@ class SimulatorTests(unittest.TestCase):
                 (date.fromisoformat(next_slot["date"]) - date.fromisoformat(played_date)).days, 3
             )
             self.assertTrue(migrated.s["calendar_validation"]["valid"])
-            self.assertEqual(migrated.s["calendar_schedule_version"], 4)
+            self.assertEqual(migrated.s["calendar_schedule_version"], 5)
 
     def test_reset_simulation_starts_clean_career_without_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -889,7 +1115,7 @@ class SimulatorTests(unittest.TestCase):
             self.assertEqual(game.s["slot_cursor"], 0)
             self.assertFalse(game.s["season_done"])
             self.assertTrue(game.save_path.exists())
-            self.assertEqual(len(game.s["slots"]), 66)
+            self.assertEqual(len(game.s["slots"]), 68)
             self.assertFalse((Path(tmp) / "backups").exists())
             self.assertEqual(list((Path(tmp) / "season").glob("*.json")), [])
 
